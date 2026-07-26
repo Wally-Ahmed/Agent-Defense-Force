@@ -44,3 +44,6 @@ vendor/
 # Runtime output: logs, audit stream, run artifacts — regenerated
 var/
 runs/
+
+# Incident replay artifacts — regenerated
+incident/out/
