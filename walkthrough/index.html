@@ -1169,7 +1169,15 @@ function rich(target, text){
   }
 }
 
-const HOST = document.getElementById("stagehost");
+/* The strip is a DIRECT CHILD of .wrap, inserted at the #stagehost anchor (just below the
+   tab bar, above the tab views). It must NOT live inside a wrapper sized to itself: a
+   sticky element can only stick within its nearest block-container ancestor's box, so a
+   host div the same height as the strip gives sticky ZERO range and the strip scrolls
+   straight off the top (measured: stripTop -479px on every scene). .wrap spans the whole
+   document, so parenting to .wrap makes the pin last for the entire page scroll and keeps
+   the strip on screen across every tab. */
+const HOST = document.querySelector(".wrap");
+const HOSTANCHOR = document.getElementById("stagehost");
 const captionEl = document.getElementById("caption"), tourbtn = document.getElementById("tourbtn");
 
 /* media strip: double-buffered img crossfade + a video element; video wins when present.
@@ -1185,7 +1193,7 @@ const visPHt = document.createElement("div"); visPHt.className = "vt"; visPHt.te
 const visPHn = document.createElement("div"); visPHn.className = "vn";
 const visPHd = document.createElement("div"); visPHd.className = "vd";
 visPH.append(visPHt, visPHn, visPHd); vis.appendChild(visPH);
-HOST.insertBefore(vis, HOST.firstChild);
+HOST.insertBefore(vis, HOSTANCHOR);
 let visFront = visA;
 
 function sceneVis(n, fit, pop, shot){
@@ -1199,7 +1207,7 @@ function sceneVis(n, fit, pop, shot){
      docked scenes adopt the strip back */
   vis.classList.toggle("float", !!pop);
   if(pop){ if(vis.parentElement !== document.body) document.body.appendChild(vis); }
-  else if(vis.parentElement !== HOST) HOST.insertBefore(vis, HOST.firstChild);
+  else if(vis.parentElement !== HOST) HOST.insertBefore(vis, HOSTANCHOR);
   /* enter layout NOW — the focus scroll fires on a timer and needs final docTops and a real
      sticky-top. The async .show adds in the load handlers below become no-ops. */
   vis.classList.add("show");
@@ -1501,7 +1509,11 @@ function pauseTour(){
 function resumeTour(){
   if(!tourOn || !tourPaused) return;
   tourPaused = false; ppBtn.textContent = "❚❚";
-  if(tourAudio) tourAudio.play().catch(()=>{});        /* resumes from the paused currentTime */
+  /* resume from the paused currentTime — but ONLY on the audio path. On the silent path
+     (no mp3) fbCb is set; calling play() again on a failed source would risk a second
+     `error` event re-arming the fallback with the FULL scene duration instead of the
+     remaining time, so a pause near the end of a scene would replay its whole length. */
+  if(tourAudio && !fbCb) tourAudio.play().catch(()=>{});
   if(fbCb && fbRemain > 0) armFallback(fbCb, fbRemain);
   if(visVWasPlaying){ visV.play().catch(()=>{}); visVWasPlaying = false; }
   if(capRemain > 0){ capMs = capRemain; capArmed = Date.now();
