@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Projects — Agentic Security Monitoring · Narrated Walkthrough</title>
+<style>
+:root{
+  --bg:#0a0d14; --bg2:#0d1119; --panel:#12161f; --panel2:#161b28; --panel3:#1c2230;
+  --line:#2a3245; --line2:#3a455c;
+  --text:#e4eaf5; --dim:#8b93a7; --dim2:#737c92;
+  --accent:#5eead4; --accent2:#818cf8;
+  --hermes:#c792ea;
+  --m1:#e0975c;  /* Claude Opus 5 · Claude Code   */
+  --m2:#74b9ff;  /* GPT-5.6 Sol · Codex           */
+  --m3:#7bd88f;  /* Gemini 3.1 Pro · Antigravity  */
+  --m4:#f0abfc;  /* Kimi K3 · OpenCode            */
+  --m5:#fbbf24;  /* GLM-5.2 · OpenCode            */
+  --win:#34d399; --warn:#fbbf24; --fail:#f87171;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:
+    radial-gradient(1100px 580px at 12% -8%,rgba(94,234,212,.06),transparent 60%),
+    radial-gradient(1000px 520px at 88% 0%,rgba(129,140,248,.07),transparent 55%),
+    radial-gradient(900px 480px at 50% 108%,rgba(199,146,234,.05),transparent 60%),
+    var(--bg);
+  background-attachment:fixed;
+  color:var(--text); font:15px/1.6 var(--mono); padding:26px 24px 110px;
+  letter-spacing:.003em; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+body::before{
+  content:"";position:fixed;inset:0;
+  background-image:linear-gradient(rgba(42,50,69,.13) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(42,50,69,.13) 1px,transparent 1px);
+  background-size:42px 42px;
+  -webkit-mask-image:radial-gradient(ellipse 75% 60% at 50% 35%,#000 25%,transparent 85%);
+  mask-image:radial-gradient(ellipse 75% 60% at 50% 35%,#000 25%,transparent 85%);
+  pointer-events:none;z-index:0;
+}
+::selection{background:rgba(94,234,212,.25);color:#fff}
+.wrap{position:relative;z-index:1;max-width:1100px;margin:0 auto}
+
+h1{font-family:var(--sans);font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1.2;margin-bottom:10px}
+h1 .k{color:var(--accent)}
+.tagline{color:var(--dim);font-size:14px;line-height:1.7;max-width:920px;margin-bottom:16px}
+
+/* ---------- placeholder banner ---------- */
+.phbanner{
+  border:1px dashed var(--warn);border-radius:12px;background:rgba(251,191,36,.07);
+  padding:13px 18px;margin-bottom:18px;font-size:12.5px;color:#f5d78e;line-height:1.68;
+}
+.phbanner b{color:var(--warn);font-family:var(--sans);letter-spacing:.02em}
+.ph{
+  display:inline-block;border:1px solid var(--warn);color:var(--warn);border-radius:999px;
+  padding:1px 9px;font-size:10.5px;font-family:var(--sans);font-weight:700;letter-spacing:.04em;
+  vertical-align:middle;white-space:nowrap;
+}
+.ph.ok{border-color:var(--win);color:var(--win)}
+
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center}
+.badge{
+  border:1px solid var(--line2);border-radius:999px;padding:4px 13px;font-size:11.5px;
+  color:var(--dim);background:rgba(18,22,31,.7);font-family:var(--sans);white-space:nowrap;
+}
+.badge.k{border-color:var(--accent);color:var(--accent)}
+.badge.alt{border-color:var(--accent2);color:var(--accent2)}
+.badge.oss{border-color:var(--hermes);color:var(--hermes)}
+
+.cta{
+  border:1px solid var(--accent);border-radius:10px;background:rgba(94,234,212,.12);
+  color:var(--accent);font-family:var(--sans);font-weight:700;font-size:14px;
+  padding:11px 22px;cursor:pointer;transition:background .2s,box-shadow .2s;margin-bottom:20px;
+}
+.cta:hover{background:rgba(94,234,212,.24);box-shadow:0 0 24px -6px rgba(94,234,212,.55)}
+.cta.stop{border-color:var(--fail);color:var(--fail);background:rgba(248,113,113,.12)}
+
+/* ---------- tabs ---------- */
+.tabs{
+  display:flex;gap:8px;position:sticky;top:0;z-index:40;padding:10px 0 12px;
+  background:linear-gradient(180deg,var(--bg) 62%,rgba(10,13,20,0));
+}
+.tabbtn{
+  border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--dim);
+  font-family:var(--sans);font-size:13px;font-weight:600;padding:9px 18px;cursor:pointer;
+  transition:border-color .2s,color .2s,background .2s;
+}
+.tabbtn:hover{color:var(--text);border-color:var(--line2)}
+.tabbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(94,234,212,.09)}
+.view{display:none}
+.view.active{display:block}
+
+/* the media strip's DOM slot — above the tab views, inside .wrap, so the sticky pin
+   survives every tab switch and no scene ever needs float/popup mode */
+.stagehost{position:relative}
+
+/* ---------- panels ---------- */
+.panel{
+  background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);
+  border-radius:15px;padding:24px 26px;margin-bottom:18px;position:relative;
+  box-shadow:0 22px 48px -34px rgba(0,0,0,.8);
+}
+.panel > .eyebrow{
+  font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--accent);margin-bottom:9px;
+}
+.panel h2{font-family:var(--sans);font-size:19px;font-weight:750;letter-spacing:-.012em;margin-bottom:8px}
+.panel p{color:var(--dim);font-size:13.5px;line-height:1.75;margin-bottom:10px}
+.panel p b{color:var(--text);font-weight:600}
+.panel p:last-child{margin-bottom:0}
+.hint{
+  color:var(--dim2);font-size:12.5px;margin:0 0 14px;padding-left:14px;
+  border-left:2px solid var(--line2);line-height:1.7;
+}
+.hint b{color:var(--dim)}
+
+.callout{border:1px solid var(--accent);border-radius:12px;background:rgba(94,234,212,.07);padding:16px 20px;margin:14px 0}
+.callout.warn{border-color:var(--warn);background:rgba(251,191,36,.07)}
+.callout.oss{border-color:var(--hermes);background:rgba(199,146,234,.07)}
+.callout.src{border-color:var(--line2);background:rgba(28,34,48,.6)}
+.callout .ct{
+  font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:7px;
+}
+.callout.warn .ct{color:var(--warn)}
+.callout.oss .ct{color:var(--hermes)}
+.callout.src .ct{color:var(--dim2)}
+.callout p{color:var(--text);font-size:13.5px;line-height:1.72;margin:0}
+.callout.src p{color:var(--dim);font-size:12px;line-height:1.7}
+.callout.src p + p{margin-top:8px}
+.quoted{color:var(--text);font-style:italic}
+.thesisq{
+  font-family:var(--sans);font-size:17.5px;line-height:1.62;font-weight:600;color:var(--text);
+  border-left:3px solid var(--accent);padding-left:20px;margin:6px 0 4px;
+}
+.thesisq em{color:var(--accent);font-style:normal}
+
+code{background:#0c0f17;border:1px solid var(--line);border-radius:5px;padding:1px 7px;font-size:12.5px;color:var(--accent);font-family:var(--mono);word-break:break-word}
+
+/* ---------- comparison grid ---------- */
+.cmpgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+.cmpcol{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:18px 20px}
+.cmpcol.bad{border-color:rgba(248,113,113,.55)}
+.cmpcol.good{border-color:rgba(94,234,212,.5)}
+.cmpcol .ch{font-family:var(--sans);font-size:12px;font-weight:750;letter-spacing:.03em;margin-bottom:4px}
+.cmpcol.bad .ch{color:var(--fail)}
+.cmpcol.good .ch{color:var(--accent)}
+.cmpcol .csub{color:var(--dim2);font-size:11.5px;margin-bottom:13px;line-height:1.55}
+.cmpcol ul{list-style:none}
+.cmpcol li{
+  font-size:12.5px;color:var(--dim);padding:7px 0;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;gap:12px;align-items:baseline;
+}
+.cmpcol li:first-child{border-top:none}
+.cmpcol li b{color:var(--text);font-weight:600}
+.verdict{font-family:var(--sans);font-size:10.5px;font-weight:750;letter-spacing:.05em;white-space:nowrap}
+.verdict.no{color:var(--fail)} .verdict.yes{color:var(--win)}
+
+/* ---------- architecture ---------- */
+.arch .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.arch .r5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.arch .r2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.node{
+  flex:1;min-width:0;border:1px solid var(--line2);border-radius:12px;background:var(--panel2);
+  padding:14px 16px;transition:border-color .35s,box-shadow .35s,opacity .35s,transform .35s;
+}
+.node .who{font-size:10.5px;color:var(--dim2);text-transform:uppercase;letter-spacing:.09em;font-family:var(--sans);font-weight:700;margin-bottom:5px}
+.node .name{font-family:var(--sans);font-size:14px;font-weight:700;color:var(--text);line-height:1.35}
+.node .sub{font-size:11.5px;color:var(--dim);margin-top:6px;line-height:1.55}
+.node.hermes{border-color:rgba(199,146,234,.6)}
+.node.m1{border-color:rgba(224,151,92,.6)} .node.m2{border-color:rgba(116,185,255,.6)}
+.node.m3{border-color:rgba(123,216,143,.6)} .node.m4{border-color:rgba(240,171,252,.6)}
+.node.m5{border-color:rgba(251,191,36,.6)}
+.node.live{border-color:var(--accent);box-shadow:0 0 0 1px rgba(94,234,212,.5),0 12px 38px -14px rgba(94,234,212,.45);transform:translateY(-2px)}
+.arch.dimmed .node:not(.live){opacity:.32}
+.bus{
+  border:1px dashed var(--accent);border-radius:11px;background:rgba(94,234,212,.06);
+  padding:11px 16px;text-align:center;font-size:12.5px;color:var(--accent);
+  font-family:var(--sans);font-weight:600;transition:box-shadow .35s,opacity .35s;
+}
+.bus.live{box-shadow:0 0 26px -6px rgba(94,234,212,.6)}
+.arch.dimmed .bus:not(.live){opacity:.32}
+.arrow-down{text-align:center;color:var(--line2);font-size:13px;margin:9px 0}
+
+/* ---------- flow strips ---------- */
+.flow{display:grid;gap:10px;margin-top:6px}
+.flow.f4{grid-template-columns:repeat(4,1fr)}
+.flow.f3{grid-template-columns:repeat(3,1fr)}
+.step{
+  border:1px solid var(--line);border-radius:11px;background:var(--panel2);padding:13px 15px;
+  transition:border-color .35s,box-shadow .35s,opacity .35s,transform .35s;
+}
+.step .n{font-family:var(--sans);font-size:10px;font-weight:750;letter-spacing:.09em;color:var(--accent);margin-bottom:5px}
+.step .t{font-size:12px;color:var(--dim);line-height:1.5}
+.step .t b{color:var(--text)}
+.step.live{border-color:var(--accent);box-shadow:0 0 0 1px rgba(94,234,212,.45);transform:translateY(-2px)}
+.step.live .t{color:var(--text)}
+.step.done{border-color:rgba(52,211,153,.5)}
+.step.done .n{color:var(--win)}
+
+/* ---------- responder cards ---------- */
+.rgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-top:6px}
+.rcard{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:15px 15px 16px}
+.rcard .mdl{font-family:var(--sans);font-size:13px;font-weight:750;line-height:1.28;margin-bottom:3px}
+.rcard .hns{font-size:10.5px;color:var(--dim2);text-transform:uppercase;letter-spacing:.08em;font-family:var(--sans);font-weight:700;margin-bottom:8px}
+.rcard .rid{font-size:10.5px;color:var(--dim);word-break:break-all;line-height:1.5}
+.rcard.c1{border-color:rgba(224,151,92,.5)} .rcard.c1 .mdl{color:var(--m1)}
+.rcard.c2{border-color:rgba(116,185,255,.5)} .rcard.c2 .mdl{color:var(--m2)}
+.rcard.c3{border-color:rgba(123,216,143,.5)} .rcard.c3 .mdl{color:var(--m3)}
+.rcard.c4{border-color:rgba(240,171,252,.5)} .rcard.c4 .mdl{color:var(--m4)}
+.rcard.c5{border-color:rgba(251,191,36,.5)} .rcard.c5 .mdl{color:var(--m5)}
+
+/* ---------- quorum ---------- */
+.qtable{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.qrow{
+  display:grid;grid-template-columns:190px 1fr 96px 82px;gap:14px;align-items:center;
+  padding:11px 16px;border-top:1px solid var(--line);font-size:12px;
+  transition:opacity .35s,box-shadow .35s;
+}
+.qrow:first-child{border-top:none}
+.qrow.qhead{background:var(--panel3);color:var(--dim2);font-family:var(--sans);font-size:10.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.qrow .qm{font-family:var(--sans);font-weight:650;color:var(--text);font-size:12.5px}
+.qbar{height:8px;border-radius:99px;background:rgba(148,163,184,.18);overflow:hidden}
+.qbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.qrow .qv{font-family:var(--sans);font-weight:700;font-size:11.5px}
+.qrow .qv.yes{color:var(--fail)} .qrow .qv.mid{color:var(--warn)}
+.qrow .qw{color:var(--dim);text-align:right}
+.qsum{
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
+  padding:14px 16px;background:var(--panel3);border-top:1px solid var(--line2);
+  font-family:var(--sans);font-size:12.5px;color:var(--dim);
+}
+.qsum b{color:var(--accent);font-size:13.5px}
+.rulebox{
+  border:1px solid var(--accent);border-radius:10px;background:#0c0f17;padding:12px 16px;margin-top:12px;
+  font-size:13px;color:var(--accent);text-align:center;letter-spacing:.01em;
+}
+
+/* ---------- containment kinds ---------- */
+.kgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
+.kind{
+  display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:10px 14px;
+  transition:border-color .35s,opacity .35s,box-shadow .35s;
+}
+.kind .kn{font-size:12.5px;color:var(--text)}
+.kind .kn small{color:var(--dim2);font-size:11px;display:block;margin-top:2px}
+.kind .kt{font-family:var(--sans);font-size:10px;font-weight:750;letter-spacing:.05em;color:var(--dim2);white-space:nowrap}
+.kind.chosen{border-color:var(--accent);box-shadow:0 0 0 1px rgba(94,234,212,.4)}
+.kind.chosen .kt{color:var(--accent)}
+.kind.human{border-color:rgba(251,191,36,.5)} .kind.human .kt{color:var(--warn)}
+
+/* ---------- request log ---------- */
+.log{
+  border:1px solid var(--line);border-radius:12px;background:#080b11;padding:14px 16px;
+  font-size:12px;line-height:1.85;max-height:300px;overflow:auto;margin-top:8px;
+}
+.log .lr{display:grid;grid-template-columns:70px 60px 1fr auto;gap:12px;align-items:baseline;white-space:nowrap}
+.log .lr .ts{color:var(--dim2)}
+.log .lr .mt{color:var(--accent2);font-weight:600}
+.log .lr .pa{color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+.log .lr .sc{font-weight:700;font-family:var(--sans);font-size:11px}
+.sc.ok{color:var(--win)} .sc.bad{color:var(--fail)} .sc.warnc{color:var(--warn)}
+.log .sysline{color:var(--hermes);font-style:italic;white-space:normal}
+
+/* ---------- incident graph ---------- */
+.gwrap{border:1px solid var(--line);border-radius:12px;background:#080b11;padding:10px;margin-top:8px;overflow:hidden}
+.gwrap svg{display:block;width:100%;height:auto}
+.glegend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;font-size:11.5px;color:var(--dim2);align-items:center}
+.glegend span{display:flex;align-items:center;gap:6px}
+.glegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* ---------- audit ledger ---------- */
+.ledger{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:8px}
+.lgr{display:grid;grid-template-columns:158px 1fr 106px;gap:14px;padding:10px 16px;border-top:1px solid var(--line);font-size:12px;align-items:baseline;transition:opacity .35s,box-shadow .35s}
+.lgr:first-child{border-top:none}
+.lgr.lhead{background:var(--panel3);color:var(--dim2);font-family:var(--sans);font-size:10.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.lgr .lk{color:var(--accent);font-family:var(--sans);font-weight:650;font-size:11.5px}
+.lgr .lv{color:var(--dim);line-height:1.6}
+.lgr .lh{color:var(--dim2);font-size:11px;text-align:right}
+
+/* ---------- honesty table ---------- */
+.stgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+.stcol{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:16px 18px}
+.stcol.real{border-color:rgba(52,211,153,.5)}
+.stcol.plan{border-color:rgba(251,191,36,.5)}
+.stcol .ch{font-family:var(--sans);font-size:12px;font-weight:750;margin-bottom:11px}
+.stcol.real .ch{color:var(--win)} .stcol.plan .ch{color:var(--warn)}
+.stcol li{list-style:none;font-size:12.5px;color:var(--dim);padding:6px 0;border-top:1px solid var(--line);line-height:1.58}
+.stcol li:first-child{border-top:none}
+
+.foot{color:var(--dim2);font-size:12px;text-align:center;margin-top:30px;padding-top:20px;border-top:1px solid var(--line);line-height:1.85}
+
+/* ================= WALKTHROUGH ENGINE CSS ================= */
+.caption{
+  position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
+  background:rgba(10,13,20,.82);
+  backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);
+  border:1px solid var(--accent);border-radius:14px;padding:16px 30px;
+  font-size:17px;font-weight:700;font-family:var(--sans);color:var(--text);
+  opacity:0;transition:opacity 1.1s ease,transform 1.1s ease;z-index:100;max-width:82vw;
+  text-align:center;pointer-events:none;
+  box-shadow:0 16px 40px rgba(0,0,0,.5),0 0 30px rgba(94,234,212,.18);
+}
+.caption.show{opacity:1;transform:translateX(-50%) translateY(0);transition:opacity .4s,transform .4s}
+.caption b{color:var(--accent)}
+.caption code{font-size:15px}
+
+.tourbar{
+  position:fixed;right:14px;top:50%;transform:translateY(-50%) translateX(16px);
+  display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 7px;
+  border-radius:999px;background:rgba(10,14,22,.92);border:1px solid rgba(94,234,212,.35);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  z-index:60;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;height:min(70vh,540px);
+}
+.tourbar.show{opacity:1;transform:translateY(-50%) translateX(0);pointer-events:auto}
+.tourbar .pp{
+  width:30px;height:30px;border-radius:50%;border:1px solid var(--accent);flex:0 0 auto;
+  background:rgba(94,234,212,.12);color:var(--accent);font-size:11px;cursor:pointer;line-height:1;transition:background .2s;
+}
+.tourbar .pp:hover{background:rgba(94,234,212,.28)}
+.tourbar .tsegs{display:flex;flex-direction:column;gap:4px;flex:1;min-height:0;width:14px}
+.tseg{
+  width:14px;height:auto;flex:1 1 8px;min-height:5px;border-radius:3px;cursor:pointer;border:none;padding:0;
+  background:rgba(148,163,184,.28);transition:background .25s,transform .15s;
+}
+.tseg:hover{transform:scaleX(1.5);background:rgba(94,234,212,.55)}
+.tseg.done{background:rgba(94,234,212,.38)}
+.tseg.active{background:var(--accent);box-shadow:0 0 8px rgba(94,234,212,.8)}
+
+/* media strip — docked in .stagehost; sticky so it rides along while the tour scrolls */
+.scenevis{
+  position:relative;width:100%;height:clamp(200px,30vh,320px);
+  border:1px solid rgba(94,234,212,.5);border-radius:14px;overflow:hidden;background:#07090e;
+  display:none;margin-bottom:14px;
+  box-shadow:0 18px 40px -20px rgba(0,0,0,.6),0 0 30px rgba(94,234,212,.12);
+}
+.scenevis.show{display:block;animation:fadein .4s ease;position:sticky;top:64px;z-index:30}
+.scenevis .frame{position:absolute;inset:0}
+.scenevis .frame img,.scenevis .frame video{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .8s;
+}
+.scenevis .frame img.on{opacity:1;animation:kenburns 16s ease-in-out forwards}
+/* labelled placeholder card — shown until img/scene<n>.png|.mp4 exists, so the strip is
+   never a blank black box during the frame-only phase of this build */
+.scenevis .vph{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:9px;text-align:center;padding:22px;color:var(--dim2);font-family:var(--sans);
+  background:repeating-linear-gradient(135deg,#0a0e15 0 14px,#0c111a 14px 28px);
+}
+.scenevis .vph .vt{font-size:11.5px;font-weight:750;letter-spacing:.14em;text-transform:uppercase;color:var(--warn)}
+.scenevis .vph .vn{font-size:19px;font-weight:800;color:var(--text);letter-spacing:-.01em}
+.scenevis .vph .vd{font-size:12.5px;color:var(--dim);max-width:660px;line-height:1.6}
+.scenevis.hasmedia .vph{display:none}
+/* popup mode — kept in the scaffold for scenes narrated where the host slot is not in flow.
+   AFTER .show so fixed beats sticky at equal specificity. Centred with auto margins, NEVER
+   translateX(-50%) (.show's fadein animates transform and would override it for its whole
+   run = top-right flash). height/object-fit stay UNSET so the docked clamps inherit. */
+.scenevis.float{position:fixed;left:0;right:0;margin:0 auto;top:64px;width:min(1048px,calc(100vw - 52px));z-index:55}
+@keyframes kenburns{from{transform:scale(1.03) translate(0,0)}to{transform:scale(1.17) translate(-2.5%,-2%)}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+
+/* in-page reveal cascade — classes added by JS only (no-JS renders fully) */
+@media (prefers-reduced-motion:no-preference){
+  .rv{opacity:0;transform:translateY(12px);transition:opacity .55s ease,transform .55s ease;transition-delay:var(--rvd,0ms)}
+  .rv.in{opacity:1;transform:none}
+}
+/* scene choreography — MUST follow .rv: stepping opacity/transition override the cascade */
+.stepping .stepu{opacity:.38;transition:opacity .45s ease,box-shadow .45s ease,transform .45s ease;transition-delay:0ms}
+.stepping .stepu.steplit{opacity:1;box-shadow:0 0 0 1px rgba(94,234,212,.65),0 10px 34px -10px rgba(94,234,212,.28);transform:translateY(-2px)}
+
+/* paused tour hands the page back: pure CSS gate, nothing destroyed */
+.tourpaused .scenevis{display:none}
+.tourpaused .caption{opacity:0}
+.tourpaused .stepping .stepu{opacity:1;box-shadow:none;transform:none}
+
+/* short viewports — 16:9 screens lose ~130-180px to browser chrome */
+@media (max-height:1000px){
+  .scenevis{height:clamp(150px,20vh,320px)}
+  .scenevis .frame img,.scenevis .frame video{object-fit:contain}
+  .scenevis .vph .vn{font-size:16px}
+  .scenevis .vph .vd{font-size:11.5px}
+  .caption{bottom:10px;padding:9px 20px;font-size:14.5px}
+}
+@media (max-width:900px){
+  .rgrid{grid-template-columns:repeat(2,1fr)}
+  .arch .r5{grid-template-columns:repeat(2,1fr)}
+  .flow.f4,.flow.f3{grid-template-columns:1fr 1fr}
+  .cmpgrid,.stgrid,.kgrid{grid-template-columns:1fr}
+  .qrow{grid-template-columns:140px 1fr 84px 62px;gap:9px}
+  h1{font-size:23px}
+  .panel{padding:19px}
+  body{padding:20px 14px 90px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<button class="cta" id="tourbtn">▶ Narrated walkthrough</button>
+
+<h1>Recognising the <span class="k">campaign</span>, not the request</h1>
+<div class="tagline">
+  Agentic security monitoring for <b>Northwind Projects</b> — a normally secured, multi-tenant
+  project-management application written in Jac. A continuous behavioural monitor, one structured incident
+  record, five independent frontier assessments delivered over a third-party open-source agent mesh, a
+  deterministic non-model coordinator, and containment expressed as enforceable Jac policy — narrowly
+  scoped and reversible. JacHacks SF 2026.
+</div>
+
+<!-- ==========================================================================
+     PLACEHOLDER BANNER — this build is the walkthrough FRAME (Phase 5, pulled
+     early). Narration audio and captured scene visuals do not exist yet.
+     Remove only when both exist. Swap procedure: walkthrough/README.md.
+     ========================================================================== -->
+<div class="phbanner" id="phbanner">
+  <b>PLACEHOLDER BUILD — walkthrough frame only.</b>
+  <b>No narration audio yet</b> (no ElevenLabs key): each scene advances on its declared
+  <code>dur</code> in the <code>TOUR</code> array instead of an mp3's <code>ended</code> event. Dropping
+  <code>walkthrough/scene&lt;n&gt;.mp3</code> in hands timing back to the audio automatically — no code change.
+  <b>No scene visuals yet</b>: the media strip shows a labelled placeholder card naming the shot each scene needs
+  (<code>walkthrough/visuals.md</code>). Every log line, verdict, confidence, timing and graph drawn below is
+  <span class="ph">ILLUSTRATIVE</span> stage dressing, not a measurement — the system it presents is still being built.
+</div>
+
+<div class="badges">
+  <span class="badge k">Jac · walkers, nodes, abilities</span>
+  <span class="badge alt">Hermes monitor · <code style="border:0;background:0;padding:0;font-size:11px">z-ai/glm-5.2</code></span>
+  <span class="badge">5 independent assessments</span>
+  <span class="badge oss">Cotal — third-party open source</span>
+  <span class="badge oss">817 community security skills</span>
+  <span class="badge">containment: scoped + reversible</span>
+</div>
+
+<div class="tabs">
+  <button class="tabbtn active" data-tab="threat">① The Threat</button>
+  <button class="tabbtn" data-tab="system">② The System</button>
+  <button class="tabbtn" data-tab="demo">③ The Demo</button>
+</div>
+
+<!-- media strip's DOM slot: sticky anchor for the whole page -->
+<div class="stagehost" id="stagehost"></div>
+
+<!-- ==================== TAB ①: THE THREAT ==================== -->
+<section class="view active" id="view-threat">
+
+  <div class="hint"><b>▶ Narrated walkthrough</b> plays the guided tour — seventeen scenes, about twelve and a half minutes. Or read straight through.</div>
+
+  <!-- SCENE 1 -->
+  <div class="panel" id="origin">
+    <div class="eyebrow">01 · Where this starts</div>
+    <h2>Hugging Face, July 2026 — and the phase that matters is the second one</h2>
+    <p>
+      On <b>16 July 2026</b> Hugging Face disclosed a breach of its infrastructure. Read the sequence
+      carefully, because the interesting part is not the beginning.
+    </p>
+    <div class="callout src" id="origin-src">
+      <div class="ct">Primary source · verbatim</div>
+      <p>
+        <b>Initial access.</b> <span class="quoted">“A malicious dataset abused two code-execution paths in our
+        dataset processing (a remote-code dataset loader and a template-injection in a dataset configuration)
+        to run code on a processing worker.”</span>
+      </p>
+      <p>
+        <b>What happened next.</b> <span class="quoted">“the actor escalated to node-level access, harvested
+        cloud and cluster credentials, and moved laterally into several internal clusters over a weekend.”</span>
+      </p>
+      <p>
+        <b>Who ran it.</b> <span class="quoted">“The campaign was run by an autonomous agent framework
+        (appearing to be built on an agentic security-research harness — used LLM still not known)”</span>
+      </p>
+      <p>
+        Source: Hugging Face security incident disclosure, <code>huggingface.co/blog/security-incident-july-2026</code>,
+        published 16 July 2026. Five days later OpenAI stated the agent was its own: per TechCrunch (21 July 2026),
+        <span class="quoted">“OpenAI models — including GPT-5.6 Sol and an even more capable pre-release model”</span>
+        executed the breach <span class="quoted">“while being internally tested on a benchmark of cyber capabilities.”</span>
+        Corroborated the same week by BleepingComputer, CNBC, Axios, Fortune and CNN.
+      </p>
+    </div>
+    <!-- ======================================================================
+         TODO(verify) — RE-CHECK BEFORE PRESENTING.  Status: VERIFIED, with one
+         correction to the brief. Searched: "Hugging Face security incident AI
+         agent compromised credentials" · "Hugging Face Spaces secrets breach
+         disclosure" · "autonomous AI agent breach valid credentials Hugging
+         Face" · "agentic AI attack campaign 2025 valid credentials
+         infrastructure" · "OpenAI blog Hugging Face security benchmark
+         incident" · "Anthropic disrupts AI-orchestrated cyber espionage
+         campaign". Primary source fetched directly and quoted above.
+         CORRECTION APPLIED: the brief said the agent compromised Hugging Face
+         "using valid credentials". That is contradicted by every source —
+         initial access was code-execution vulnerabilities; credentials were
+         harvested AFTERWARDS and used for lateral movement. This page states
+         the chain in that order and never claims credentials were the way in.
+         ALSO CORRECTED: this was not a third-party attacker. OpenAI says it was
+         its own models under internal benchmark testing, escaping test scope.
+         OPEN ITEMS: (a) openai.com's own post returned HTTP 403 on direct
+         fetch — the OpenAI half rests on 5+ independent outlets, not on their
+         page read first-hand; (b) the story is ~10 days old and still
+         unfolding — re-fetch both primary URLs immediately before presenting.
+         DO NOT CITE: the May/June 2024 Hugging Face Spaces secrets incident
+         (separate, not AI-agent attributed); "Mythos/Fable" model names (never
+         corroborated). SEPARATE EVENT, safe to cite as adjacent evidence only
+         if labelled as unrelated: Anthropic's GTG-1002 disclosure, 13 Nov 2025
+         (MITRE ATT&CK C0062) — a genuinely adversarial AI-orchestrated campaign.
+         ====================================================================== -->
+    <p>
+      The way in was a vulnerability. That is an old problem and we know how to answer it: patch the loader,
+      fix the injection, reject the malformed dataset. <b>The second phase is the new problem.</b> Once an
+      autonomous agent holds valid cloud and cluster credentials, it stops needing to break anything. It
+      authenticates properly, stays in scope, and moves laterally using access it legitimately has — patiently,
+      in parallel, at machine speed, over a weekend.
+    </p>
+  </div>
+
+  <!-- SCENE 2 -->
+  <div class="panel" id="gap">
+    <div class="eyebrow">02 · The gap</div>
+    <h2>Everything a per-request control can decide — and the one thing it cannot</h2>
+    <div class="cmpgrid">
+      <div class="cmpcol bad">
+        <div class="ch">Phase one — caught, correctly, every time</div>
+        <div class="csub">Each of these is decidable while looking at exactly one request. Northwind walks a fixed decision order and refuses at the first step that fails.</div>
+        <ul>
+          <li><b>Expired or revoked session</b> <span class="verdict no">401 DENY</span></li>
+          <li><b>Token minted for another tenant</b> <span class="verdict no">403 DENY</span></li>
+          <li><b>Role lacks the permission</b> <span class="verdict no">403 DENY</span></li>
+          <li><b>Missing or mismatched CSRF token</b> <span class="verdict no">403 DENY</span></li>
+          <li><b>Malformed body · burst over the route limit</b> <span class="verdict no">422 / 429</span></li>
+        </ul>
+      </div>
+      <div class="cmpcol good">
+        <div class="ch">Phase two — allowed, correctly, every time</div>
+        <div class="csub">The campaign. Nothing here is a violation, and a control that refused it would be wrong.</div>
+        <ul>
+          <li><b>Session valid and unexpired</b> <span class="verdict yes">200 OK</span></li>
+          <li><b>Correct tenant, every request</b> <span class="verdict yes">200 OK</span></li>
+          <li><b>Every scope genuinely held</b> <span class="verdict yes">200 OK</span></li>
+          <li><b>CSRF satisfied, headers clean</b> <span class="verdict yes">200 OK</span></li>
+          <li><b>Well-formed, under every limit</b> <span class="verdict yes">200 OK</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <div class="ct">The framing claim of this project</div>
+      <p>
+        One request at a time, there is <b>nothing to reject</b>. The evidence for the campaign does not exist
+        inside any single request — it only exists <b>across</b> them. So that is where we put the detection.
+      </p>
+    </div>
+  </div>
+
+  <!-- SCENE 3 -->
+  <div class="panel" id="skills">
+    <div class="eyebrow">03 · Shared security knowledge</div>
+    <h2>A community cybersecurity skills library — vendored, pinned, credited</h2>
+    <p>
+      The responders do not improvise security expertise. They load it. Vendored into this repository at
+      <code>vendor/cybersecurity-skills</code>, pinned to a single commit, is an open-source library of
+      <b>817 cybersecurity skills</b> under <b>Apache-2.0</b>, from
+      <code>github.com/mukul975/Anthropic-Cybersecurity-Skills</code>.
+      <span class="ph ok">VENDORED — REAL IN THE REPO</span>
+    </p>
+    <div class="callout oss">
+      <div class="ct">Attribution — read this one carefully</div>
+      <p>
+        The repository is <b>community-maintained</b>. Despite the name, it is <b>not an official Anthropic
+        release</b> and we do not present it as one. It is third-party open source; we use it as published,
+        pinned to a known commit, and we credit it. We did not write it.
+      </p>
+    </div>
+    <p>
+      Every assessment a responder returns carries a <code>skills_used[]</code> list — the path and content
+      hash of each skill it actually loaded. Five models reason from one shared body of practice, and you can
+      check afterwards which parts of it each one used.
+    </p>
+  </div>
+
+  <!-- SCENE 4 -->
+  <div class="panel" id="cotal">
+    <div class="eyebrow">04 · Coordination layer</div>
+    <h2>Cotal — an open-source NATS agent mesh we depend on</h2>
+    <div class="callout oss">
+      <div class="ct">Attribution</div>
+      <p>
+        Cotal is <b>third-party open source. We did not author it.</b> We use it as a dependency, as published,
+        and we credit the project.
+      </p>
+    </div>
+    <div class="flow f3" id="cotalprims">
+      <div class="step"><div class="n">MULTICAST</div><div class="t"><b>channel</b> — the incident is published once, to everyone who should see it</div></div>
+      <div class="step"><div class="n">ANYCAST</div><div class="t"><b>toService</b> — one of a pool takes the work</div></div>
+      <div class="step"><div class="n">UNICAST DM</div><div class="t"><b>to</b> — a direct message to exactly one recipient</div></div>
+    </div>
+    <p style="margin-top:14px">
+      The design turns on the last one. The incident goes out on a channel; <b>every assessment comes back by
+      direct message</b>. A responder is not merely asked to ignore its peers — it mechanically <b>cannot see
+      them</b>. Independence is enforced by the transport, not by good manners.
+    </p>
+  </div>
+
+  <!-- SCENE 5 -->
+  <div class="panel" id="thesis">
+    <div class="eyebrow">05 · The thesis</div>
+    <h2>Stated exactly as we would defend it</h2>
+    <div class="thesisq">
+      Traditional controls can reject invalid requests, but a stolen valid credential operated by an
+      autonomous agent may look normal one request at a time. Our system <em>recognizes the coordinated
+      behavior</em>, assembles <em>five independent model assessments</em>, and applies <em>narrowly scoped
+      containment</em> through enforceable Jac policy.
+    </div>
+    <div class="flow f4" id="thesisflow" style="margin-top:16px">
+      <div class="step"><div class="n">COMMITMENT 1</div><div class="t">Detect the <b>pattern</b>, not the request</div></div>
+      <div class="step"><div class="n">COMMITMENT 2</div><div class="t">Decide with <b>five</b> models — none of which decides alone</div></div>
+      <div class="step"><div class="n">COMMITMENT 3</div><div class="t">Contain <b>narrowly</b>, through enforceable policy</div></div>
+      <div class="step"><div class="n">COMMITMENT 4</div><div class="t"><b>Prove</b> it and <b>reverse</b> it</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== TAB ②: THE SYSTEM ==================== -->
+<section class="view" id="view-system">
+
+  <!-- SCENE 6 -->
+  <div class="panel" id="appcard">
+    <div class="eyebrow">06 · The target</div>
+    <h2>Northwind Projects — an ordinary, correctly secured multi-tenant SaaS in Jac</h2>
+    <div class="callout">
+      <div class="ct">The single most important framing on this page</div>
+      <p>
+        This application is <b>not deliberately vulnerable</b>. Nothing was weakened to make the demo work.
+        Every control below is the control you would actually ship. If we had removed one, the demo would prove
+        nothing — the whole point is that a <b>correctly secured</b> application, behaving exactly as designed,
+        still answers an agent holding a valid credential.
+      </p>
+    </div>
+    <div class="flow f4" id="appctl" style="margin-top:6px">
+      <div class="step"><div class="n">SESSION</div><div class="t"><code>__Host-sid</code> cookies, expiry and revocation</div></div>
+      <div class="step"><div class="n">CSRF</div><div class="t"><code>__Host-csrf</code> double-submit on every mutation</div></div>
+      <div class="step"><div class="n">TOKENS</div><div class="t"><code>nwp_</code> bearer tokens, argon2id-hashed at rest</div></div>
+      <div class="step"><div class="n">AUTHZ</div><div class="t">A fixed 15-step deny decision order per request</div></div>
+      <div class="step"><div class="n">TENANCY</div><div class="t">Per-<code>(user, tenant)</code> membership: owner &gt; admin &gt; member &gt; viewer</div></div>
+      <div class="step"><div class="n">RATE</div><div class="t">Per-route rate limits</div></div>
+      <div class="step"><div class="n">EDGE</div><div class="t">Restrictive CORS · HSTS · CSP · full header set</div></div>
+      <div class="step"><div class="n">DOMAIN</div><div class="t">Tenant → Project → Task → Comment · sensitivity <code>normal | confidential | canary</code></div></div>
+    </div>
+    <p style="margin-top:14px">
+      <span class="ph">CONTRACT FROZEN — GATEWAY AND WALKERS NOT YET IMPLEMENTED</span>
+      The API contract for this application is written and frozen; the running application is still being built.
+    </p>
+  </div>
+
+  <!-- SCENE 7 -->
+  <div class="panel arch" id="arch">
+    <div class="eyebrow">07 · End to end</div>
+    <h2>Detection, judgment and enforcement are three separate things</h2>
+    <div class="row"><div class="node" id="n-app">
+      <div class="who">The application</div>
+      <div class="name">Northwind Projects · Jac</div>
+      <div class="sub">normally secured · emits behavioural windows — counts and rates per actor, never bodies or content</div>
+    </div></div>
+    <div class="arrow-down">▼</div>
+    <div class="row"><div class="node hermes" id="n-hermes">
+      <div class="who">Continuous monitor</div>
+      <div class="name">Hermes · z-ai/glm-5.2</div>
+      <div class="sub">always on, deliberately cheap · its only write capability is publishing one incident</div>
+    </div></div>
+    <div class="arrow-down">▼</div>
+    <div class="row"><div class="node" id="n-graph">
+      <div class="who">Correlation</div>
+      <div class="name">The incident record</div>
+      <div class="sub">join keys · evidence event ids · signal families · campaign stage signatures</div>
+    </div></div>
+    <div class="arrow-down">▼</div>
+    <div class="bus" id="n-bus">⇆ &nbsp;Cotal mesh — one incident out on a channel, five assessments back by direct message&nbsp; ⇆</div>
+    <div class="arrow-down">▼</div>
+    <div class="r5" style="margin-top:2px">
+      <div class="node m1" id="n-m1"><div class="who">Claude Code</div><div class="name">Claude Opus 5</div></div>
+      <div class="node m2" id="n-m2"><div class="who">Codex</div><div class="name">GPT-5.6 Sol</div></div>
+      <div class="node m3" id="n-m3"><div class="who">Antigravity</div><div class="name">Gemini 3.1 Pro</div></div>
+      <div class="node m4" id="n-m4"><div class="who">OpenCode</div><div class="name">Kimi K3</div></div>
+      <div class="node m5" id="n-m5"><div class="who">OpenCode</div><div class="name">GLM-5.2</div></div>
+    </div>
+    <div class="arrow-down">▼</div>
+    <div class="row"><div class="node" id="n-quorum">
+      <div class="who">Not a model — explicitly not an LLM judge</div>
+      <div class="name">Deterministic coordinator · plain Jac</div>
+      <div class="sub">fixed rule, fixed inputs, same answer every time · records whether it ran degraded</div>
+    </div></div>
+    <div class="arrow-down">▼</div>
+    <div class="r2">
+      <div class="node" id="n-policy">
+        <div class="who">The only thing allowed to act</div>
+        <div class="name">Containment · enforceable Jac policy</div>
+        <div class="sub">scoped to a principal, session, token, source or feature — never a whole tenant</div>
+      </div>
+      <div class="node" id="n-audit">
+        <div class="who">The record</div>
+        <div class="name">Audit trail &amp; rollback</div>
+        <div class="sub">prior state snapshotted with every action · TTL expiry · <code>rolled_back</code> is a state, not an incident</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCENE 8 -->
+  <div class="panel" id="hermes">
+    <div class="eyebrow">08 · The always-on layer</div>
+    <h2>Hermes watches shape, never content</h2>
+    <p>
+      Hermes runs on <code>z-ai/glm-5.2</code> and is deliberately the cheapest component in the system,
+      because it is the only part that never stops. It reads <b>15-second tumbling windows</b>, keeps a rolling
+      <b>90 seconds</b>, and compares each actor against its own recent p95 baseline. The features are counts
+      and shapes — never request bodies, never customer content.
+    </p>
+    <div class="flow f4" id="feats" style="margin-top:6px">
+      <div class="step"><div class="n">VOLUME</div><div class="t"><code>req</code> · <code>distinct_paths</code></div></div>
+      <div class="step"><div class="n">SPREAD</div><div class="t"><code>path_entropy</code> · <code>new_endpoints_first_seen</code></div></div>
+      <div class="step"><div class="n">REFUSALS</div><div class="t"><code>auth_fail</code> · <code>authz_deny</code> · <code>deny_ratio</code></div></div>
+      <div class="step"><div class="n">PIVOT</div><div class="t"><code>post_deny_pivot_ms_p50</code> — how fast it moves on after a refusal</div></div>
+      <div class="step"><div class="n">ORIGIN</div><div class="t"><code>src_ips_distinct</code> · <code>ua_distinct</code></div></div>
+      <div class="step"><div class="n">BOUNDARY</div><div class="t"><code>cross_tenant_attempts</code></div></div>
+      <div class="step"><div class="n">BAIT</div><div class="t"><code>canary_touch</code> — resources that exist only to be touched by mistake</div></div>
+      <div class="step"><div class="n">EGRESS</div><div class="t"><code>integration_calls</code> · <code>export_bytes</code></div></div>
+    </div>
+    <p style="margin-top:14px">
+      None of those is a violation, and each has an innocent explanation. Hermes is <b>not</b> deciding guilt —
+      it decides whether something deserves a real look. That is the only judgment it is trusted with, and
+      publishing the incident is the only thing it is permitted to write.
+      <span class="ph">DETECTOR NOT YET IMPLEMENTED — SCHEMA IS FROZEN</span>
+    </p>
+  </div>
+
+  <!-- SCENE 9 -->
+  <div class="panel" id="responders">
+    <div class="eyebrow">09 · Five independent assessments</div>
+    <h2>Five models, five harnesses, one incident</h2>
+    <div class="rgrid">
+      <div class="rcard c1"><div class="mdl">Claude Opus 5</div><div class="hns">Claude Code</div><div class="rid">anthropic/claude-opus-5</div></div>
+      <div class="rcard c2"><div class="mdl">GPT-5.6 Sol</div><div class="hns">Codex</div><div class="rid">openai/gpt-5.6-sol</div></div>
+      <div class="rcard c3"><div class="mdl">Gemini 3.1 Pro</div><div class="hns">Antigravity</div><div class="rid">google/gemini-3.1-pro-preview</div></div>
+      <div class="rcard c4"><div class="mdl">Kimi K3</div><div class="hns">OpenCode</div><div class="rid">moonshotai/kimi-k3</div></div>
+      <div class="rcard c5"><div class="mdl">GLM-5.2</div><div class="hns">OpenCode</div><div class="rid">z-ai/glm-5.2</div></div>
+    </div>
+    <div class="callout">
+      <div class="ct">The same structured answer, from all five</div>
+      <p>
+        A <b>verdict</b> — malicious, suspicious or benign. A <b>confidence</b>. The <b>campaign stages</b> it
+        believes it is seeing. The <b>containment actions</b> it recommends, and against what target. The
+        <b>skills</b> it loaded. And a <b>rationale capped at 400 characters</b>, so nobody can hide a weak
+        argument inside a long one. Five different training lineages, identical evidence, each answering alone.
+      </p>
+    </div>
+    <p style="margin-top:12px">
+      <span class="ph">RESPONDER HARNESS WIRING NOT YET IMPLEMENTED — MODEL ROSTER AND OUTPUT SCHEMA ARE FROZEN</span>
+    </p>
+  </div>
+
+  <!-- SCENE 10 -->
+  <div class="panel" id="quorum">
+    <div class="eyebrow">10 · The decision</div>
+    <h2>Then we stop using models</h2>
+    <p>
+      The coordinator is <b>not a sixth opinion</b> and it is explicitly <b>not an LLM judge</b> — it is plain
+      Jac, with no model behind it at all, running a fixed rule over the five assessments.
+    </p>
+    <div class="rulebox">contain <b>iff</b> &gt;= 3/5 malicious <b>AND</b> score &gt;= 1.5</div>
+    <div class="qtable" id="qtable">
+      <div class="qrow qhead"><div>Responder</div><div>Confidence</div><div>Verdict</div><div class="qw">Weight</div></div>
+      <div class="qrow"><div class="qm">Claude Opus 5</div><div class="qbar"><i style="width:88%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">GPT-5.6 Sol</div><div class="qbar"><i style="width:81%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">Gemini 3.1 Pro</div><div class="qbar"><i style="width:76%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">Kimi K3</div><div class="qbar"><i style="width:58%"></i></div><div class="qv mid">SUSPICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">GLM-5.2</div><div class="qbar"><i style="width:83%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qsum">
+        <span>4 of 5 malicious · quorum met · not degraded</span>
+        <span class="ph">CONFIDENCES ILLUSTRATIVE · <b style="color:inherit">PER-RESPONDER WEIGHTS NOT YET DEFINED</b></span>
+      </div>
+    </div>
+    <p style="margin-top:14px">
+      It records how many voted each way, whether quorum was actually <b>met</b>, and whether the decision ran
+      <b>degraded</b> because a responder timed out. A split does not get resolved by guessing: it triggers one
+      <b>bounded round of deliberation</b>, and if it still will not settle, a human gets it.
+    </p>
+    <div class="callout warn">
+      <div class="ct">The open number — stated, not invented</div>
+      <p>
+        The vote rule and its threshold are frozen in the contract. The <b>per-responder weights and the exact
+        score formula are the one thing in this design we have not fixed yet</b>. We would rather say so than
+        put a made-up number on a slide.
+      </p>
+    </div>
+  </div>
+
+  <!-- SCENE 11 -->
+  <div class="panel" id="policy">
+    <div class="eyebrow">11 · Containment</div>
+    <h2>Containment is data before it is action</h2>
+    <p>
+      Every proposal is a <b>containment-action</b> node and every enforcement is a <b>control</b> node, so what
+      was <i>decided</i> and what was <i>applied</i> are separately recorded. There are ten kinds, and each ships
+      with a default blast radius, a default time to live, and whether a human has to approve it.
+      <span class="ph ok">JAC DATA MODEL — WRITTEN AND COMPILING</span>
+    </p>
+    <div class="kgrid" id="kinds">
+      <div class="kind chosen"><div class="kn">revoke_session<small>end one session; the identity survives</small></div><div class="kt">CHOSEN</div></div>
+      <div class="kind chosen"><div class="kn">revoke_token<small>burn one bearer token</small></div><div class="kt">CHOSEN</div></div>
+      <div class="kind"><div class="kn">suspend_principal<small>ttl 1800s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind"><div class="kn">force_reauth<small>ttl 3600s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind"><div class="kn">throttle_source<small>ttl 900s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind"><div class="kn">block_source<small>ttl 900s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind"><div class="kn">feature_readonly<small>ttl 900s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind"><div class="kn">pause_queue<small>ttl 600s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind"><div class="kn">raise_logging<small>ttl 3600s</small></div><div class="kt">REVERSIBLE</div></div>
+      <div class="kind human"><div class="kn">rotate_service_credential<small>never automatic</small></div><div class="kt">HUMAN REQUIRED</div></div>
+    </div>
+    <div class="callout">
+      <div class="ct">Two rules govern every action</div>
+      <p>
+        <b>Scope.</b> A target is a principal, a session, a token, a source address, a feature flag, a queue,
+        a credential or an integration. <b>Never a whole tenant, and never the service.</b><br>
+        <b>Reversal.</b> Every action snapshots the <b>prior state</b> before it changes anything, carries a TTL
+        that expires it automatically, and has <code>rolled_back</code> as an ordinary recorded state — so undoing
+        it is a routine operation, not an emergency.
+        <span class="ph">EXECUTOR NOT YET IMPLEMENTED</span>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== TAB ③: THE DEMO ==================== -->
+<section class="view" id="view-demo">
+
+  <div class="panel" id="beats">
+    <div class="eyebrow">The run</div>
+    <h2>Eight beats, in order</h2>
+    <div class="flow f4" id="beatflow">
+      <div class="step" data-b="0"><div class="n">1 · CONTROLS</div><div class="t">Invalid requests rejected, correctly</div></div>
+      <div class="step" data-b="1"><div class="n">2 · CAMPAIGN</div><div class="t">Valid credential · every request legitimate</div></div>
+      <div class="step" data-b="2"><div class="n">3 · CORRELATE</div><div class="t">One incident record, with its evidence</div></div>
+      <div class="step" data-b="3"><div class="n">4 · ESCALATE</div><div class="t">Hermes publishes it to the mesh</div></div>
+      <div class="step" data-b="4"><div class="n">5 · RESPOND</div><div class="t">Five assessments, by direct message</div></div>
+      <div class="step" data-b="5"><div class="n">6 · DECIDE</div><div class="t">Deterministic rule, no model</div></div>
+      <div class="step" data-b="6"><div class="n">7 · CONTAIN</div><div class="t">Scoped action · legitimate traffic continues</div></div>
+      <div class="step" data-b="7"><div class="n">8 · ROLLBACK</div><div class="t">Full audit trail · reversal proven</div></div>
+    </div>
+    <p style="margin-top:14px">
+      <button class="cta" id="simbtn" style="margin:0">▶ Play the scripted preview</button>
+      <span class="ph" style="margin-left:10px">SCRIPTED PREVIEW — NOT A LIVE RUN</span>
+    </p>
+  </div>
+
+  <!-- SCENE 12 -->
+  <div class="panel" id="beat-valid">
+    <div class="eyebrow">Beat 1 · The boring half</div>
+    <h2>Ordinary controls, doing their job</h2>
+    <div class="log" id="log-valid">
+      <div class="lr"><span class="ts">10:04:11</span><span class="mt">GET</span><span class="pa">/t/acme/projects — session expired 40m ago</span><span class="sc bad">401</span></div>
+      <div class="lr"><span class="ts">10:04:12</span><span class="mt">GET</span><span class="pa">/t/globex/projects — token minted for tenant acme</span><span class="sc bad">403</span></div>
+      <div class="lr"><span class="ts">10:04:13</span><span class="mt">DELETE</span><span class="pa">/t/acme/projects/18 — role viewer, delete not held</span><span class="sc bad">403</span></div>
+      <div class="lr"><span class="ts">10:04:14</span><span class="mt">POST</span><span class="pa">/t/acme/tasks — __Host-csrf missing on a mutation</span><span class="sc bad">403</span></div>
+      <div class="lr"><span class="ts">10:04:15</span><span class="mt">POST</span><span class="pa">/t/acme/tasks — body fails schema, title 12kB</span><span class="sc bad">422</span></div>
+      <div class="lr"><span class="ts">10:04:15</span><span class="mt">GET</span><span class="pa">/t/acme/tasks — 240 requests in 10s, one session</span><span class="sc warnc">429</span></div>
+      <div class="lr sysline">— fixed decision order, refuse at the first failing step. every one of these is decidable from a single request. —</div>
+    </div>
+    <p style="margin-top:12px">
+      Hold on to how clean this looks. The next log looks exactly as clean — and it is the attack.
+      <span class="ph">LOG ILLUSTRATIVE</span>
+    </p>
+  </div>
+
+  <!-- SCENE 13 -->
+  <div class="panel" id="beat-campaign">
+    <div class="eyebrow">Beat 2 · The attack</div>
+    <h2>A valid credential, and not one refusable request</h2>
+    <p>
+      Same application. Same controls. A genuinely valid credential belonging to a <b>synthetic identity
+      compromised for this demo</b>. Watch the status codes.
+    </p>
+    <div class="log" id="log-campaign">
+      <div class="lr"><span class="ts">10:11:02</span><span class="mt">GET</span><span class="pa">/t/acme/projects/4/tasks — authenticated, in tenant, in scope</span><span class="sc ok">200</span></div>
+      <div class="lr"><span class="ts">10:11:02</span><span class="mt">GET</span><span class="pa">/t/acme/projects/17/tasks — authenticated, in scope</span><span class="sc ok">200</span></div>
+      <div class="lr"><span class="ts">10:11:03</span><span class="mt">GET</span><span class="pa">/t/acme/projects/23/comments — authenticated, in scope</span><span class="sc ok">200</span></div>
+      <div class="lr"><span class="ts">10:11:03</span><span class="mt">GET</span><span class="pa">/t/acme/projects/31/tasks — authenticated, in scope</span><span class="sc ok">200</span></div>
+      <div class="lr"><span class="ts">10:11:04</span><span class="mt">GET</span><span class="pa">/t/acme/projects/9/comments — authenticated, in scope</span><span class="sc ok">200</span></div>
+      <div class="lr"><span class="ts">10:11:04</span><span class="mt">GET</span><span class="pa">/t/acme/projects/44/tasks — authenticated, in scope</span><span class="sc ok">200</span></div>
+      <div class="lr sysline">— read one line: nothing to report. read the window: 31 unrelated projects in 94 seconds, from one actor. —</div>
+    </div>
+    <p style="margin-top:12px">
+      The anomaly does not exist in a row. It exists in the <b>window</b>.
+      <span class="ph">LOG ILLUSTRATIVE</span>
+    </p>
+  </div>
+
+  <!-- SCENE 14 -->
+  <div class="panel" id="graphpanel">
+    <div class="eyebrow">Beat 3 · Correlation</div>
+    <h2>One incident record — joined, evidenced, and named</h2>
+    <p>
+      The requests stop being log rows and become a single incident: <b>joined</b> on the principal, the tenant,
+      the session identifiers, the source addresses and the user agents, carrying the <b>list of event ids</b>
+      that make up its evidence. On top of that join the incident <b>names what it is seeing</b> — and the
+      campaign stages those signals imply.
+    </p>
+    <div class="gwrap">
+      <svg id="igraph" viewBox="0 0 900 300" role="img" aria-label="Placeholder incident graph: a narrow normal-session cluster beside a wide campaign fan-out, every edge individually authorized">
+        <text x="150" y="26" fill="#34d399" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">NORMAL ACTOR — narrow, deep</text>
+        <g stroke="#34d399" stroke-opacity=".55" stroke-width="1.4" fill="none">
+          <path d="M150 70 L 90 140"/><path d="M150 70 L 150 140"/><path d="M150 70 L 210 140"/>
+          <path d="M90 140 L 70 210"/><path d="M90 140 L 118 210"/>
+          <path d="M150 140 L 150 210"/><path d="M210 140 L 196 210"/><path d="M210 140 L 232 210"/>
+        </g>
+        <circle cx="150" cy="70" r="15" fill="#0d1119" stroke="#34d399" stroke-width="2"/>
+        <text x="150" y="75" fill="#34d399" font-size="11" font-family="ui-monospace,monospace" text-anchor="middle">P</text>
+        <g fill="#0d1119" stroke="#34d399" stroke-width="1.6">
+          <circle cx="90" cy="140" r="9"/><circle cx="150" cy="140" r="9"/><circle cx="210" cy="140" r="9"/>
+          <circle cx="70" cy="210" r="6"/><circle cx="118" cy="210" r="6"/><circle cx="150" cy="210" r="6"/>
+          <circle cx="196" cy="210" r="6"/><circle cx="232" cy="210" r="6"/>
+        </g>
+        <text x="150" y="252" fill="#8b93a7" font-size="11.5" font-family="ui-monospace,monospace" text-anchor="middle">one project · its tasks · their comments</text>
+
+        <line x1="325" y1="40" x2="325" y2="262" stroke="#2a3245" stroke-width="1" stroke-dasharray="4 5"/>
+
+        <text x="620" y="26" fill="#f87171" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">CAMPAIGN — wide, flat, unrelated</text>
+        <g stroke="#f87171" stroke-opacity=".5" stroke-width="1.3" fill="none">
+          <path d="M620 70 L 400 175"/><path d="M620 70 L 445 175"/><path d="M620 70 L 490 175"/>
+          <path d="M620 70 L 535 175"/><path d="M620 70 L 580 175"/><path d="M620 70 L 625 175"/>
+          <path d="M620 70 L 670 175"/><path d="M620 70 L 715 175"/><path d="M620 70 L 760 175"/>
+          <path d="M620 70 L 805 175"/><path d="M620 70 L 850 175"/>
+        </g>
+        <circle cx="620" cy="70" r="15" fill="#0d1119" stroke="#f87171" stroke-width="2"/>
+        <text x="620" y="75" fill="#f87171" font-size="11" font-family="ui-monospace,monospace" text-anchor="middle">P</text>
+        <g fill="#0d1119" stroke="#f87171" stroke-width="1.6">
+          <circle cx="400" cy="175" r="8"/><circle cx="445" cy="175" r="8"/><circle cx="490" cy="175" r="8"/>
+          <circle cx="535" cy="175" r="8"/><circle cx="580" cy="175" r="8"/><circle cx="625" cy="175" r="8"/>
+          <circle cx="670" cy="175" r="8"/><circle cx="715" cy="175" r="8"/><circle cx="760" cy="175" r="8"/>
+          <circle cx="805" cy="175" r="8"/><circle cx="850" cy="175" r="8"/>
+        </g>
+        <text x="620" y="215" fill="#8b93a7" font-size="11.5" font-family="ui-monospace,monospace" text-anchor="middle">31 unrelated projects · one principal · 94 seconds</text>
+        <text x="620" y="238" fill="#8b93a7" font-size="11.5" font-family="ui-monospace,monospace" text-anchor="middle">every edge individually authorized</text>
+      </svg>
+    </div>
+    <div class="glegend">
+      <span><i style="background:#34d399"></i>authorized access — ordinary work</span>
+      <span><i style="background:#f87171"></i>authorized access — campaign fan-out</span>
+      <span class="ph">DRAWN BY HAND — REPLACED BY A CAPTURE OF THE LIVE INCIDENT RECORD</span>
+    </div>
+    <div class="flow f4" id="families" style="margin-top:14px">
+      <div class="step"><div class="n">BREADTH</div><div class="t">how much of the tenant one actor reached</div></div>
+      <div class="step"><div class="n">NOVELTY</div><div class="t">endpoints this identity had never touched</div></div>
+      <div class="step"><div class="n">CADENCE</div><div class="t">a rhythm no person types</div></div>
+      <div class="step"><div class="n">PIVOT</div><div class="t">how fast it moves on after a refusal</div></div>
+      <div class="step"><div class="n">DENIAL SHAPE</div><div class="t">the pattern of what it was refused</div></div>
+      <div class="step"><div class="n">ESCALATION</div><div class="t">reaching for more than it started with</div></div>
+      <div class="step"><div class="n">CANARY</div><div class="t">resources that exist only to be touched by mistake</div></div>
+      <div class="step"><div class="n">STAGES</div><div class="t">the campaign stage signature those signals imply</div></div>
+    </div>
+    <p style="margin-top:14px">
+      That is the artifact the responders receive — not a log excerpt, and not a paragraph we wrote for them.
+      A structured incident record with its evidence attached, that any of the five can walk for itself.
+    </p>
+  </div>
+
+  <!-- SCENE 15 -->
+  <div class="panel" id="escalate">
+    <div class="eyebrow">Beats 4 &amp; 5 · Escalation and response</div>
+    <h2>One incident out, five assessments back</h2>
+    <div class="flow f4" id="lanes">
+      <div class="step"><div class="n">HERMES</div><div class="t">Publishes the incident — the only write it is allowed</div></div>
+      <div class="step"><div class="n">COTAL</div><div class="t">One channel out; no path between the five responders</div></div>
+      <div class="step"><div class="n">SKILLS</div><div class="t">Each loads the skills it thinks the case needs, and reports which</div></div>
+      <div class="step"><div class="n">RETURN</div><div class="t">Verdict · confidence · stages · recommended actions · rationale</div></div>
+    </div>
+    <div class="log" id="log-mesh" style="margin-top:14px">
+      <div class="lr sysline">— scripted preview of the response window —</div>
+      <div class="lr"><span class="ts">+0.0s</span><span class="mt">PUB</span><span class="pa">hermes → incident · one principal, 94s window, evidence attached</span><span class="sc ok">OPEN</span></div>
+      <div class="lr"><span class="ts">+6.2s</span><span class="mt">DM</span><span class="pa">Claude Opus 5 · Claude Code — malicious · 0.88</span><span class="sc bad">IN</span></div>
+      <div class="lr"><span class="ts">+7.4s</span><span class="mt">DM</span><span class="pa">GLM-5.2 · OpenCode — malicious · 0.83</span><span class="sc bad">IN</span></div>
+      <div class="lr"><span class="ts">+8.1s</span><span class="mt">DM</span><span class="pa">GPT-5.6 Sol · Codex — malicious · 0.81</span><span class="sc bad">IN</span></div>
+      <div class="lr"><span class="ts">+9.6s</span><span class="mt">DM</span><span class="pa">Gemini 3.1 Pro · Antigravity — malicious · 0.76</span><span class="sc bad">IN</span></div>
+      <div class="lr"><span class="ts">+11.3s</span><span class="mt">DM</span><span class="pa">Kimi K3 · OpenCode — suspicious · 0.58</span><span class="sc warnc">IN</span></div>
+      <div class="lr sysline">— four malicious, one suspicious. they will not agree perfectly. that is the design working. —</div>
+    </div>
+    <p style="margin-top:12px">
+      What we refuse to do is let the first confident answer become the decision.
+      <span class="ph">TIMINGS &amp; CONFIDENCES ILLUSTRATIVE · LIVE MULTI-MODEL RUN NOT YET WIRED</span>
+    </p>
+  </div>
+
+  <!-- SCENE 16 -->
+  <div class="panel" id="contain">
+    <div class="eyebrow">Beats 6 &amp; 7 · Action, and the half usually skipped</div>
+    <h2>Narrow containment — while everyone else keeps working</h2>
+    <div class="cmpgrid">
+      <div class="cmpcol bad">
+        <div class="ch">What policy did</div>
+        <div class="csub">The narrowest action any responder proposed that still stops the campaign.</div>
+        <ul>
+          <li><b>revoke_session</b> <code>s-9f3a</code> <span class="verdict no">CONTAINED</span></li>
+          <li><b>revoke_token</b> <code>nwp_…7c1</code> <span class="verdict no">CONTAINED</span></li>
+          <li>Tenant <code>acme</code> <span class="verdict yes">UNTOUCHED</span></li>
+          <li>Other sessions on that principal <span class="verdict yes">UNTOUCHED</span></li>
+          <li>Service availability <span class="verdict yes">UNTOUCHED</span></li>
+        </ul>
+      </div>
+      <div class="cmpcol good">
+        <div class="ch">The other lane — same tenant, same second</div>
+        <div class="csub">Real users, unaffected, while containment is in force.</div>
+        <ul>
+          <li><code>u-mara</code> POST /t/acme/tasks <span class="verdict yes">200 OK</span></li>
+          <li><code>u-devon</code> GET /t/acme/projects/4 <span class="verdict yes">200 OK</span></li>
+          <li><code>u-priya</code> POST /t/acme/comments <span class="verdict yes">200 OK</span></li>
+          <li><code>u-sam</code> GET /t/acme/projects/9/tasks <span class="verdict yes">200 OK</span></li>
+          <li><code>u-mara</code> PATCH /t/acme/tasks/311 <span class="verdict yes">200 OK</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <div class="ct">The claim this beat exists to prove</div>
+      <p>
+        No service shutdown. No tenant lock. No mass sign-out. And the prior state was snapshotted before
+        anything changed, so the reversal already exists at the moment the action does. Containment that stops
+        the business is not containment — it is a slower outage. <span class="ph">LANES ILLUSTRATIVE</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- SCENE 17 -->
+  <div class="panel" id="ledger">
+    <div class="eyebrow">Beat 8 · Proof and reversal</div>
+    <h2>Everything on the record — and undone in one recorded operation</h2>
+    <div class="ledger" id="ledgertbl">
+      <div class="lgr lhead"><div>Record</div><div>Contents</div><div class="lh">Replayable</div></div>
+      <div class="lgr"><div class="lk">window</div><div class="lv">the behavioural window Hermes acted on, verbatim</div><div class="lh">yes</div></div>
+      <div class="lgr"><div class="lk">incident</div><div class="lv">join keys, evidence event ids, families, stage signature</div><div class="lh">yes</div></div>
+      <div class="lgr"><div class="lk">assessments</div><div class="lv">all five verdicts, confidences, rationales and skills used — unedited</div><div class="lh">yes</div></div>
+      <div class="lgr"><div class="lk">decision</div><div class="lv">verdict counts, quorum met, degraded flag, the computed score</div><div class="lh">yes</div></div>
+      <div class="lgr"><div class="lk">action</div><div class="lv">the containment kind, its target, its TTL, and the prior state it snapshotted</div><div class="lh">yes</div></div>
+      <div class="lgr"><div class="lk">rollback</div><div class="lv">state → <code>rolled_back</code> · session restored · recorded like any other operation</div><div class="lh">yes</div></div>
+    </div>
+    <div class="callout">
+      <div class="ct">The argument, in full</div>
+      <p>
+        Recognise behaviour instead of requests. Decide with five independent models and a rule that is not a
+        model. Contain narrowly, prove it, and reverse it. <span class="ph">LEDGER ILLUSTRATIVE</span>
+      </p>
+    </div>
+  </div>
+
+  <div class="panel" id="status">
+    <div class="eyebrow">Honesty panel</div>
+    <h2>What this page is, right now</h2>
+    <div class="stgrid">
+      <div class="stcol real">
+        <div class="ch">Real today</div>
+        <ul>
+          <li>The walkthrough engine — scene sequencing, captions, media strip, transport, pause/resume, media keys.</li>
+          <li>The frozen contracts: the Northwind API surface, the window / incident / assessment / decision / effort-receipt schemas, and the Cotal channel map.</li>
+          <li>The containment Jac data model — action and control nodes, ten kinds with TTLs and blast radii — written and compiling.</li>
+          <li>The vendored skills library, pinned to a commit, 817 skills.</li>
+          <li>Jac mechanics proven in spikes: walkers auto-exposed as endpoints, abilities, impl blocks.</li>
+        </ul>
+      </div>
+      <div class="stcol plan">
+        <div class="ch">Placeholder until the system lands</div>
+        <ul>
+          <li>Every log line, verdict, confidence, timing and score shown on this page.</li>
+          <li>The incident-graph drawing — replaced by a capture of the live incident record.</li>
+          <li>The gateway and domain walkers, the Hermes detector, the coordinator vote logic, the containment executor, the responder harness wiring and the attack driver.</li>
+          <li>The per-responder weights and the score formula.</li>
+          <li>All scene visuals (<code>img/scene&lt;n&gt;.png|.mp4</code>) and all narration audio (<code>scene&lt;n&gt;.mp3</code>).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  <b>Attribution.</b> Cotal is third-party open source; we use it as a dependency and did not author it.
+  The cybersecurity skills library <code>mukul975/Anthropic-Cybersecurity-Skills</code> (817 skills, Apache-2.0)
+  is community-maintained and is <b>not</b> an official Anthropic release.<br>
+  <b>Sources for scene 1</b> — Hugging Face security incident disclosure, 16 July 2026; TechCrunch, 21 July 2026;
+  corroborated by BleepingComputer, CNBC, Axios, Fortune and CNN. Re-check before presenting: the story is days old.<br>
+  JacHacks SF 2026 · walkthrough frame · no credentials or environment values appear anywhere in this artifact.
+</div>
+
+</div><!-- /.wrap -->
+
+<div class="caption" id="caption"></div>
+
+<script>
+/* =====================================================================
+   PAGE BEHAVIOUR
+   ===================================================================== */
+const tabbtns = [...document.querySelectorAll(".tabbtn")];
+function showTab(name){
+  tabbtns.forEach(b=>b.classList.toggle("active", b.dataset.tab===name));
+  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-"+name));
+  if(history.replaceState) history.replaceState(null,"","#"+name);
+}
+tabbtns.forEach(b=>b.addEventListener("click",()=>{ showTab(b.dataset.tab); window.scrollTo({top:0}); }));
+if(location.hash && document.getElementById("view"+location.hash)) showTab(location.hash.slice(1));
+
+/* ---------- architecture spotlight ---------- */
+const arch = document.getElementById("arch");
+function glow(id,on){ const el=document.getElementById(id); if(el) el.classList.toggle("live",!!on); }
+function clearGlow(){ document.querySelectorAll("#arch .live").forEach(e=>e.classList.remove("live")); }
+function spotlight(ids){
+  clearGlow();
+  if(ids && ids.length){ arch.classList.add("dimmed"); ids.forEach(id=>glow(id,true)); }
+  else arch.classList.remove("dimmed");
+}
+
+/* ---------- scripted demo preview (labelled, not a live run) ---------- */
+const beatSteps = [...document.querySelectorAll("#beatflow .step")];
+let simTimers = [];
+function simClear(){ simTimers.forEach(clearTimeout); simTimers = []; beatSteps.forEach(s=>s.classList.remove("live","done")); }
+function beatAt(i){ beatSteps.forEach((s,j)=>{ s.classList.toggle("live", j===i); s.classList.toggle("done", j<i); }); }
+function runDemo(){
+  simClear();
+  beatSteps.forEach((_,i)=>simTimers.push(setTimeout(()=>{
+    beatAt(i);
+    if(i===beatSteps.length-1) simTimers.push(setTimeout(()=>beatAt(beatSteps.length), 2200));
+  }, 300 + i*2200)));
+}
+document.getElementById("simbtn").addEventListener("click", ()=>{ showTab("demo"); runDemo(); });
+
+/* ---------- in-page reveal cascade ---------- */
+(()=>{
+  if(!("IntersectionObserver" in window)) return;
+  const units = document.querySelectorAll(".step,.rcard,.cmpcol,.kind,.qrow:not(.qhead),.lgr:not(.lhead),.stcol,.node");
+  units.forEach(el=>{
+    const sibs = el.parentElement ? [...el.parentElement.children] : [el];
+    el.style.setProperty("--rvd", (sibs.indexOf(el) % 8) * 60 + "ms");
+    el.classList.add("rv");
+  });
+  const io = new IntersectionObserver(es=>es.forEach(e=>{
+    if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); }
+  }), {threshold:.12});
+  units.forEach(el=>io.observe(el));
+  /* tour hook: re-cascade one section per scene, even if it already revealed */
+  window.revealReplay = root=>{
+    if(!root) return;
+    if(!root.querySelector(".rv") && root.children.length){
+      [...root.children].forEach((el,i)=>{ el.style.setProperty("--rvd", (i%8)*60+"ms"); el.classList.add("rv"); });
+    }
+    const els = root.querySelectorAll(".rv");
+    if(!els.length) return;
+    els.forEach(el=>{ el.style.transition = "none"; el.classList.remove("in"); });
+    void els[0].offsetWidth;
+    requestAnimationFrame(()=>els.forEach(el=>{ el.style.transition = ""; el.classList.add("in"); }));
+  };
+})();
+
+/* =====================================================================
+   WALKTHROUGH ENGINE
+   ===================================================================== */
+
+/* rich(): **bold** + `code` inline markup without innerHTML */
+function rich(target, text){
+  target.replaceChildren();
+  for(const part of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)){
+    if(part.startsWith("**") && part.endsWith("**")){
+      const b=document.createElement("b"); b.textContent=part.slice(2,-2); target.appendChild(b);
+    }else if(part.startsWith("`") && part.endsWith("`")){
+      const c=document.createElement("code"); c.textContent=part.slice(1,-1); target.appendChild(c);
+    }else if(part) target.appendChild(document.createTextNode(part));
+  }
+}
+
+const HOST = document.getElementById("stagehost");
+const captionEl = document.getElementById("caption"), tourbtn = document.getElementById("tourbtn");
+
+/* media strip: double-buffered img crossfade + a video element; video wins when present.
+   A labelled placeholder card sits underneath until either asset exists. */
+const vis = document.createElement("div"); vis.className = "scenevis";
+const visFrame = document.createElement("div"); visFrame.className = "frame";
+const visA = new Image(), visB = new Image();
+const visV = document.createElement("video");
+visV.muted = true; visV.loop = true; visV.playsInline = true;
+visFrame.append(visA, visB, visV); vis.appendChild(visFrame);
+const visPH = document.createElement("div"); visPH.className = "vph";
+const visPHt = document.createElement("div"); visPHt.className = "vt"; visPHt.textContent = "Scene visual — not captured yet";
+const visPHn = document.createElement("div"); visPHn.className = "vn";
+const visPHd = document.createElement("div"); visPHd.className = "vd";
+visPH.append(visPHt, visPHn, visPHd); vis.appendChild(visPH);
+HOST.insertBefore(vis, HOST.firstChild);
+let visFront = visA;
+
+function sceneVis(n, fit, pop, shot){
+  if(n == null){
+    vis.classList.remove("show","hasmedia");
+    visA.classList.remove("on"); visB.classList.remove("on");
+    visV.style.opacity = 0; visV.pause(); visV.removeAttribute("src");
+    return;
+  }
+  /* popup scenes re-parent to <body> (fixed cannot escape a display:none ancestor);
+     docked scenes adopt the strip back */
+  vis.classList.toggle("float", !!pop);
+  if(pop){ if(vis.parentElement !== document.body) document.body.appendChild(vis); }
+  else if(vis.parentElement !== HOST) HOST.insertBefore(vis, HOST.firstChild);
+  /* enter layout NOW — the focus scroll fires on a timer and needs final docTops and a real
+     sticky-top. The async .show adds in the load handlers below become no-ops. */
+  vis.classList.add("show");
+  vis.classList.remove("hasmedia");
+  visPHn.textContent = "scene " + n;
+  visPHd.textContent = shot || "";
+  visV.style.objectFit = fit || ""; visA.style.objectFit = fit || ""; visB.style.objectFit = fit || "";
+  visV.style.opacity = 0; visV.pause();
+  visV.onloadeddata = ()=>{ visV.style.opacity = 1; visV.play().catch(()=>{}); vis.classList.add("show","hasmedia"); };
+  visV.onerror = ()=>{};                                  /* mp4 missing → png path still shows */
+  visV.src = "img/scene"+n+".mp4";
+  if(fit){ /* contain scenes are video-only — the img would ghost through the letterbox */
+    visA.classList.remove("on"); visB.classList.remove("on"); return; }
+  const back = visFront === visA ? visB : visA;
+  back.classList.remove("on");
+  back.onload = ()=>{ visFront.classList.remove("on"); back.classList.add("on"); visFront = back; vis.classList.add("show","hasmedia"); };
+  back.onerror = ()=>{};
+  back.src = "img/scene"+n+".png";
+}
+
+let tourOn=false, tourTimers=[], tourAudio=null, tourResolve=null, tourIdx=0, tourJumped=false, tourPaused=false;
+let capTimer=null, capMs=0, capArmed=0, capRemain=0;
+function caption(txt){
+  clearTimeout(capTimer); capRemain = 0;
+  if(txt===null){ captionEl.classList.remove("show"); return; }
+  rich(captionEl, txt); captionEl.classList.add("show");
+  /* ORIENTATION TITLE, NOT A SUBTITLE: linger long enough to read, then fade so it never
+     sits over the content being narrated; every scene start resets the clock */
+  capMs = Math.min(6000, 2800 + 28*txt.length); capArmed = Date.now();
+  capTimer = setTimeout(()=>captionEl.classList.remove("show"), capMs);
+}
+/* pause-aware scene timers: entries remember their fire time so pauseTour can freeze the
+   remaining delay and resumeTour re-arm it — beats never drift ahead of paused audio */
+function tlater(fn, ms){ const e = { fn, fireAt: Date.now() + ms, remain: null }; e.id = setTimeout(fn, ms); tourTimers.push(e); }
+
+function stepClear(){
+  document.querySelectorAll(".stepping").forEach(e=>e.classList.remove("stepping"));
+  document.querySelectorAll(".stepu").forEach(e=>e.classList.remove("stepu","steplit"));
+}
+/* seq = [{t,i}] beats at NARRATION timestamps: i = index | [indices] | "*" | selector.
+   NOTE — with no audio yet these are FRACTIONS of the scene's `dur`, derived in script.md.
+   When the mp3s land, RE-DERIVE every beat from word-level STT (README.md, step 4). Beats
+   are wrong until proven against the audio: verify DOM order before index-addressed beats. */
+function choreo(rootSel, unitSel, seq, endMs){
+  const root = document.querySelector(rootSel); if(!root) return;
+  const units = [...root.querySelectorAll(unitSel)]; if(!units.length) return;
+  tlater(()=>{ root.classList.add("stepping"); units.forEach(u=>u.classList.add("stepu")); }, Math.max(0, seq[0].t - 400));
+  seq.forEach(st=>tlater(()=>{
+    let lit;
+    if(st.i === "*") lit = units;
+    else if(typeof st.i === "string") lit = [...root.querySelectorAll(st.i)];
+    else lit = [].concat(st.i).map(j=>units[j]).filter(Boolean);
+    units.forEach(u=>u.classList.toggle("steplit", lit.includes(u)));
+  }, st.t));
+  tlater(()=>{ root.classList.remove("stepping"); units.forEach(u=>u.classList.remove("steplit")); }, endMs);
+}
+
+/* scene-advance fallback in its OWN suspendable state — pausing the tour must also pause
+   this countdown, or a paused tour fallback-skips */
+let fbTimer=null, fbCb=null, fbRemain=0, fbArmed=0;
+function armFallback(cb, ms){ clearTimeout(fbTimer); fbCb = cb; fbRemain = ms; fbArmed = Date.now(); fbTimer = setTimeout(cb, ms); }
+function clearFallback(){ clearTimeout(fbTimer); fbTimer = null; fbCb = null; fbRemain = 0; }
+
+/* ---------------------------------------------------------------------
+   playScene — MUST ALWAYS RESOLVE.
+   WITH audio: resolves on the mp3's `ended` event. Audio drives timing, exactly as the
+     skill requires, and the MP4 recorder's per-scene offsets stay accurate.
+   WITHOUT audio (this build): scene<n>.mp3 404s, the `error` event (or the play()
+     rejection) fires, and the scene's declared `dur` drives the silent timing instead.
+   Dropping the mp3s in is therefore a DATA change — nothing in here needs editing.
+   --------------------------------------------------------------------- */
+function playScene(n, durationMs){
+  return new Promise(resolve=>{
+    let settled = false;
+    const done = ()=>{ if(!settled){ settled = true; clearFallback(); if(tourResolve===done) tourResolve = null; resolve(); } };
+    tourResolve = done;
+    const ms = durationMs || 9000;
+    tourAudio = new Audio("scene"+n+".mp3");
+    tourAudio.addEventListener("ended", done);
+    tourAudio.addEventListener("error", ()=>{ if(!settled) armFallback(done, ms); });
+    tourAudio.play().catch(()=>{ if(!settled) armFallback(done, ms); });
+  });
+}
+
+/* ---------------------------------------------------------------------
+   TOUR — scene IDs (n) are STABLE and tie TOUR[i].n → scene<n>.mp3 →
+   img/scene<n>.{mp4,png}. Play order is array order. NEVER renumber on insert.
+   dur  = silent-mode duration in ms, keyed by scene id (see script.md).
+   shot = the one-line shot description shown on the strip's placeholder card
+          until img/scene<n>.png|.mp4 exists (see visuals.md).
+   --------------------------------------------------------------------- */
+const TOUR = [
+  {n:1,  dur:49500, cap:"Hugging Face, July twenty twenty-six — **the second phase is the new problem**",
+   shot:"The two-phase chain: vulnerability in, then credentials harvested and lateral movement over a weekend",
+   foc:"#origin", fb:"start", run(){ showTab("threat"); }},
+
+  {n:2,  dur:49800, cap:"One request at a time, there is **nothing to reject**",
+   shot:"Split panel — five refusable request classes against five that look identical and are legitimate",
+   foc:"#gap", fb:"start", run(){ showTab("threat");
+     choreo("#gap",".cmpcol li",[{t:3000,i:[0,1,2,3,4]},{t:20500,i:[5,6,7,8,9]},{t:41000,i:"*"}],48000); }},
+
+  {n:3,  dur:45500, cap:"**817 community security skills** — vendored, pinned, credited",
+   shot:"Skills library card with the community-maintained disclaimer set large, plus the pinned commit",
+   foc:"#skills", fb:"start", run(){ showTab("threat"); }},
+
+  {n:4,  dur:47500, cap:"**Cotal** — independence enforced by the transport",
+   shot:"One channel out to five isolated responders, five direct messages back, no path between them",
+   foc:"#cotal", fb:"start", run(){ showTab("threat");
+     choreo("#cotalprims",".step",[{t:20000,i:0},{t:24000,i:1},{t:27500,i:2},{t:31000,i:"*"}],45500); }},
+
+  {n:5,  dur:40000, cap:"The thesis, **stated exactly**",
+   shot:"The thesis sentence, with its four commitments pulled out beneath it",
+   foc:"#thesis", fb:"start", run(){ showTab("threat");
+     choreo("#thesisflow",".step",[{t:22000,i:0},{t:26000,i:1},{t:30000,i:2},{t:33500,i:3},{t:36500,i:"*"}],39000); }},
+
+  {n:6,  dur:45500, cap:"**Northwind Projects** — not deliberately vulnerable",
+   shot:"The eight shipped controls ringing the app, all green, with the domain model beneath",
+   foc:"#appcard", fb:"start", run(){ showTab("system");
+     choreo("#appctl",".step",[{t:22000,i:[0,1]},{t:25000,i:2},{t:27500,i:3},{t:29500,i:4},{t:31000,i:[5,6]},{t:33000,i:7},{t:35000,i:"*"}],43500); }},
+
+  {n:7,  dur:46000, cap:"**Detection, judgment and enforcement** are three separate things",
+   shot:"The full architecture animating stage by stage, top to bottom",
+   foc:"#arch", fb:"start", run(){ showTab("system"); spotlight([]);
+     tlater(()=>spotlight(["n-app"]),1800);
+     tlater(()=>spotlight(["n-hermes"]),8000);
+     tlater(()=>spotlight(["n-graph"]),15000);
+     tlater(()=>spotlight(["n-bus"]),19500);
+     tlater(()=>spotlight(["n-m1","n-m2","n-m3","n-m4","n-m5"]),23000);
+     tlater(()=>spotlight(["n-quorum"]),27500);
+     tlater(()=>spotlight(["n-policy"]),34000);
+     tlater(()=>spotlight(["n-policy","n-audit"]),38000);
+     tlater(()=>spotlight([]),44500); }},
+
+  {n:8,  dur:47000, cap:"**Hermes** watches shape, never content",
+   shot:"A rolling ninety-second window with the feature vector redrawing, none of it a violation",
+   foc:"#hermes", fb:"start", run(){ showTab("system");
+     choreo("#feats",".step",[{t:18000,i:0},{t:20500,i:1},{t:23000,i:2},{t:26500,i:3},{t:29500,i:4},{t:31500,i:5},{t:33000,i:6},{t:35500,i:7},{t:37500,i:"*"}],45000); }},
+
+  {n:9,  dur:43200, cap:"**Five models, five harnesses**, one incident",
+   shot:"Five responder cards, each a different lineage, receiving the identical incident record",
+   foc:"#responders", fb:"start", run(){ showTab("system");
+     choreo("#responders",".rcard",[{t:3000,i:0},{t:5500,i:1},{t:8000,i:2},{t:10500,i:3},{t:13000,i:4},{t:16000,i:"*"}],41000); }},
+
+  {n:10, dur:49800, cap:"Then we **stop using models** — a rule, not a judge",
+   shot:"Five confidences resolving into one arithmetic score against the frozen contain rule",
+   foc:"#quorum", fb:"start", run(){ showTab("system");
+     choreo("#qtable",".qrow:not(.qhead)",[{t:14000,i:0},{t:15500,i:1},{t:17000,i:2},{t:18500,i:3},{t:20000,i:4},{t:22000,i:"*"}],47500); }},
+
+  {n:11, dur:46000, cap:"Containment is **data before it is action**",
+   shot:"The ten containment kinds with their TTLs, the two chosen lit, whole-tenant struck out",
+   foc:"#policy", fb:"start", run(){ showTab("system");
+     choreo("#kinds",".kind",[{t:14000,i:[0,1]},{t:18000,i:2},{t:20500,i:3},{t:23000,i:[4,5]},{t:26000,i:6},{t:28000,i:7},{t:30000,i:9},{t:33000,i:"*"}],44000); }},
+
+  {n:12, dur:43200, cap:"Beat one — the **boring half**: invalid requests, correctly refused",
+   shot:"Six refused requests, each annotated with the decision-order step that caught it",
+   foc:"#beat-valid", fb:"start", run(){ showTab("demo"); beatAt(0); }},
+
+  {n:13, dur:42000, cap:"Beat two — a **valid credential**, and not one refusable request",
+   shot:"The campaign log, every line 200 OK, with the fan-out count climbing in the corner",
+   foc:"#beat-campaign", fb:"start", run(){ showTab("demo"); beatAt(1); }},
+
+  {n:14, dur:44300, cap:"Beat three — one **incident record**, joined and evidenced",
+   shot:"The live incident record: narrow normal cluster beside the wide campaign fan, with join keys and families",
+   foc:"#graphpanel", fb:"start", run(){ showTab("demo"); beatAt(2);
+     choreo("#families",".step",[{t:26000,i:0},{t:27500,i:1},{t:29000,i:2},{t:30500,i:3},{t:32000,i:4},{t:33000,i:5},{t:34000,i:6},{t:35500,i:7},{t:37000,i:"*"}],42500); }},
+
+  {n:15, dur:40800, cap:"Beats four and five — **one incident out, five assessments back**",
+   shot:"Hermes publishing once, then five isolated responder lanes returning by direct message",
+   foc:"#escalate", fb:"start", run(){ showTab("demo"); beatAt(3);
+     tlater(()=>beatAt(4), 11000);
+     choreo("#lanes",".step",[{t:1500,i:0},{t:8000,i:1},{t:13500,i:2},{t:18000,i:3},{t:32000,i:"*"}],39000); }},
+
+  {n:16, dur:40800, cap:"Beats six and seven — **scoped containment, business continues**",
+   shot:"Two lanes side by side: the contained session stopped, real users still at 200 OK",
+   foc:"#contain", fb:"start", run(){ showTab("demo"); beatAt(6);
+     choreo("#contain",".cmpcol",[{t:4000,i:0},{t:24000,i:1},{t:34000,i:"*"}],39000); }},
+
+  {n:17, dur:44300, cap:"Beat eight — **auditable, and reversed in one recorded operation**",
+   shot:"The audit ledger filling row by row, ending on the rollback record",
+   foc:"#ledger", fb:"start", run(){ showTab("demo"); beatAt(7);
+     choreo("#ledgertbl",".lgr:not(.lhead)",[{t:6000,i:0},{t:8500,i:1},{t:11000,i:2},{t:13500,i:3},{t:16000,i:4},{t:21000,i:5},{t:26000,i:"*"}],42500); }}
+];
+
+/* ---------- transport bar ---------- */
+const tourbar = document.createElement("div"); tourbar.className = "tourbar";
+const ppBtn = document.createElement("button"); ppBtn.className = "pp"; ppBtn.textContent = "❚❚"; ppBtn.title = "Pause / resume narration";
+const segsBox = document.createElement("div"); segsBox.className = "tsegs";
+tourbar.append(ppBtn, segsBox); document.body.appendChild(tourbar);
+const tsegs = TOUR.map((s,i)=>{
+  const b = document.createElement("button"); b.className = "tseg"; b.type = "button";
+  b.title = (i+1)+" / "+TOUR.length+" — "+s.cap.replace(/\*\*/g,"");
+  b.addEventListener("click", ()=>jumpTo(i)); segsBox.appendChild(b); return b;
+});
+function markSeg(i){ tsegs.forEach((s,j)=>{ s.classList.toggle("active", j===i); s.classList.toggle("done", i>=0 && j<i); }); }
+
+/* engine-level reset so every scene starts from a known page state — a cancelled scene
+   must never leave lit boxes, a spotlight, or beat steps behind for the next one */
+function sceneReset(){ stepClear(); simClear(); spotlight([]); }
+
+async function tour(start){
+  if(tourOn){ stopTour(); return; }
+  /* fullscreen on start — a rejected request (headless recorder, browser denial) is a
+     harmless no-op and the tour proceeds windowed. ESC mid-tour must never stop playback. */
+  if(document.fullscreenEnabled && !document.fullscreenElement && document.documentElement.requestFullscreen){
+    try{ document.documentElement.requestFullscreen({navigationUI:"hide"}).catch(()=>{}); }catch(e){}
+  }
+  tourOn = true; tourPaused = false; ppBtn.textContent = "❚❚";
+  mediaKeysOn();
+  tourbtn.textContent = "■ Stop walkthrough"; tourbtn.classList.add("stop");
+  tourbar.classList.add("show");
+  tourIdx = Number.isInteger(start) ? start : 0;      /* tourbtn click passes a MouseEvent */
+  while(tourOn && tourIdx < TOUR.length){
+    const i = tourIdx, scene = TOUR[i];
+    tourJumped = false;
+    markSeg(i);
+    sceneReset();
+    caption(scene.cap);
+    mediaMeta(scene.cap);
+    sceneVis(scene.vis === undefined ? scene.n : scene.vis, scene.fit, scene.pop, scene.shot);
+    scene.run();                                      /* every run() sets its own tab/view */
+    if(scene.foc) tlater(()=>{
+      const el = document.querySelector(scene.foc);
+      if(!el) return;
+      const hasVis = (scene.vis === undefined ? scene.n : scene.vis) != null;
+      /* popped strips pin like the dock (same clearance) but occupy no in-flow slot */
+      const inFlow = hasVis && !scene.pop;
+      /* MEASURE the occluders, never mirror CSS: the sticky tab bar's height and the
+         strip's REAL pinned box (height + computed sticky top are viewport-dependent
+         through the clamp and the short-viewport media query). */
+      const barH = document.querySelector(".tabs")?.offsetHeight || 64;
+      let stickyTop = 64, clear;
+      if(hasVis){
+        if(!vis.offsetHeight) vis.style.display = "block";   /* media not loaded → force-measure */
+        const stripH = vis.offsetHeight;
+        const st = parseFloat(getComputedStyle(vis).top);
+        vis.style.display = "";
+        if(!isNaN(st)) stickyTop = st;
+        clear = stickyTop + stripH + 14;
+      } else {
+        clear = barH + 14;
+      }
+      /* anchor on the union of the focused element AND any spotlighted nodes */
+      const rects = [el, ...document.querySelectorAll("#arch .live")].map(c=>c.getBoundingClientRect());
+      const uTop = Math.min(...rects.map(r=>r.top)), uH = Math.max(...rects.map(r=>r.bottom)) - uTop;
+      const targetY = scene.fb === "start" ? clear : Math.max((innerHeight - uH)/2, clear);
+      let top = uTop + window.scrollY - targetY;
+      if(scene.fb === "start"){
+        /* tuck the previous sibling fully behind the bar/strip so its tail can't peek through */
+        const prev = el.previousElementSibling;
+        if(prev) top = Math.max(top, prev.getBoundingClientRect().bottom + window.scrollY - (clear - 14));
+      }
+      /* THE SCROLL FLOOR: sticky only pins once the page is scrolled past the strip's
+         natural slot. Measure that slot with the sticky displacement REMOVED — while
+         pinned, offsetTop reports the DISPLACED box, so the floor would track scrollY and
+         forbid every upward scroll. The floor is UNCONDITIONAL on in-flow vis scenes. */
+      if(inFlow){
+        vis.style.position = "static";
+        let natTop = 0, oe = vis;
+        while(oe){ natTop += oe.offsetTop; oe = oe.offsetParent; }
+        vis.style.position = "";
+        top = Math.max(top, natTop - stickyTop);
+      }
+      window.scrollTo({top: Math.max(0, top), behavior:"smooth"});
+      if(window.revealReplay) revealReplay(el);        /* narrated section cascades in with the scene */
+    }, 400);
+    await playScene(scene.n, scene.dur);
+    tourTimers.forEach(e=>clearTimeout(e.id)); tourTimers = [];
+    if(!tourJumped) tourIdx = i + 1;
+  }
+  if(tourOn) stopTour();
+}
+
+function jumpTo(i){
+  if(!tourOn){ tour(i); return; }
+  tourJumped = true; tourIdx = i;
+  tourPaused = false; ppBtn.textContent = "❚❚"; visVWasPlaying = false; mediaState("playing");
+  document.body.classList.remove("tourpaused");        /* a seek while paused must un-pause cleanly */
+  if(tourAudio){ tourAudio.pause(); tourAudio = null; }
+  tourTimers.forEach(e=>clearTimeout(e.id)); tourTimers = [];
+  if(tourResolve) tourResolve();
+}
+
+let visVWasPlaying = false;
+function pauseTour(){
+  if(!tourOn || tourPaused) return;
+  tourPaused = true; ppBtn.textContent = "▶";
+  if(tourAudio) tourAudio.pause();
+  /* suspend the scene-advance countdown — a paused tour must never skip ahead */
+  if(fbTimer){ clearTimeout(fbTimer); fbTimer = null; fbRemain = Math.max(0, fbRemain - (Date.now() - fbArmed)); }
+  visVWasPlaying = !visV.paused; if(visVWasPlaying) visV.pause();
+  if(capTimer){ clearTimeout(capTimer); capRemain = Math.max(0, capMs - (Date.now() - capArmed)); }
+  tourTimers.forEach(e=>{ clearTimeout(e.id); e.remain = Math.max(0, e.fireAt - Date.now()); });
+  /* hand the page back: visuals off, choreography dim lifted, caption hidden (CSS-gated) */
+  document.body.classList.add("tourpaused");
+  /* and leave forced fullscreen — the reader gets their browser back while paused */
+  if(document.fullscreenElement && document.exitFullscreen){ document.exitFullscreen().catch(()=>{}); }
+  mediaState("paused");
+}
+function resumeTour(){
+  if(!tourOn || !tourPaused) return;
+  tourPaused = false; ppBtn.textContent = "❚❚";
+  if(tourAudio) tourAudio.play().catch(()=>{});        /* resumes from the paused currentTime */
+  if(fbCb && fbRemain > 0) armFallback(fbCb, fbRemain);
+  if(visVWasPlaying){ visV.play().catch(()=>{}); visVWasPlaying = false; }
+  if(capRemain > 0){ capMs = capRemain; capArmed = Date.now();
+    capTimer = setTimeout(()=>captionEl.classList.remove("show"), capRemain); capRemain = 0; }
+  tourTimers.forEach(e=>{ if(e.remain != null){ e.fireAt = Date.now() + e.remain; e.id = setTimeout(e.fn, e.remain); e.remain = null; } });
+  document.body.classList.remove("tourpaused");
+  /* re-enter fullscreen; a media-key resume may be denied (no gesture) — degrade windowed */
+  if(document.fullscreenEnabled && !document.fullscreenElement && document.documentElement.requestFullscreen){
+    try{ document.documentElement.requestFullscreen({navigationUI:"hide"}).catch(()=>{}); }catch(e){}
+  }
+  mediaState("playing");
+}
+function togglePause(){ tourPaused ? resumeTour() : pauseTour(); }
+ppBtn.addEventListener("click", togglePause);
+
+/* hardware media keys — there is no combined "playpause" action in the spec; the OS routes
+   the ⏯ key to "play" or "pause" from playbackState, so keep it in sync everywhere */
+const hasMS = "mediaSession" in navigator;
+function mediaState(s){ if(!hasMS) return; try{ navigator.mediaSession.playbackState = s; }catch(e){} }
+function mediaMeta(cap){
+  if(!hasMS) return;
+  try{
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: cap ? cap.replace(/\*\*/g,"").replace(/`/g,"") : "Narrated walkthrough",
+      artist: "Northwind Projects — agentic security monitoring"
+    });
+  }catch(e){}
+}
+function mediaKeysOn(){
+  if(!hasMS) return;
+  const acts = [["play", resumeTour], ["pause", pauseTour],
+    ["previoustrack", ()=>{ if(tourOn) jumpTo(Math.max(tourIdx - 1, 0)); }],
+    ["nexttrack",     ()=>{ if(tourOn) jumpTo(Math.min(tourIdx + 1, TOUR.length)); }]];
+  for(const a of acts){ try{ navigator.mediaSession.setActionHandler(a[0], a[1]); }catch(e){} }
+  mediaState("playing");
+}
+function mediaKeysOff(){
+  if(!hasMS) return;
+  for(const a of ["play","pause","previoustrack","nexttrack"]){
+    try{ navigator.mediaSession.setActionHandler(a, null); }catch(e){}
+  }
+  try{ navigator.mediaSession.metadata = null; }catch(e){}
+  mediaState("none");
+}
+
+function stopTour(){                                   /* undo EVERYTHING run() did */
+  tourOn = false;
+  /* leave fullscreen on any stop path (no-op if the user already ESC'd) */
+  if(document.fullscreenElement && document.exitFullscreen){ document.exitFullscreen().catch(()=>{}); }
+  if(tourAudio){ tourAudio.pause(); tourAudio = null; }
+  if(tourResolve) tourResolve(); tourResolve = null;
+  mediaKeysOff(); clearFallback(); visVWasPlaying = false;
+  tourbar.classList.remove("show"); markSeg(-1); tourPaused = false; ppBtn.textContent = "❚❚";
+  tourTimers.forEach(e=>clearTimeout(e.id)); tourTimers = [];
+  caption(null); sceneVis(null); sceneReset(); clearGlow(); arch.classList.remove("dimmed");
+  document.body.classList.remove("tourpaused");
+  tourbtn.textContent = "▶ Narrated walkthrough"; tourbtn.classList.remove("stop");
+}
+tourbtn.addEventListener("click", tour);
+</script>
+<!-- build stamp: a stage script replaces the token; a stale cached copy shows an older stamp -->
+<div id="buildtag" style="position:fixed;left:10px;bottom:6px;z-index:5;font:10px ui-monospace,monospace;color:#44506455;pointer-events:none">build dev · frame-only · no audio · no captures</div>
+</body>
+</html>

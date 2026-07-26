@@ -1,0 +1,27 @@
+{
+  "name": "@jachackssf/transcript-tap",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Transcript tap: wraps each AI harness invocation, captures its complete CLI output stream, redacts credentials, and publishes it to the Cotal chat channel tr-<agent_id>.",
+  "bin": {
+    "transcript-tap": "./src/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./redact": "./src/redact.js",
+    "./adapters": "./src/adapters/index.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:e2e": "TRANSCRIPT_E2E=1 node --test test/e2e-claude.test.js",
+    "doctor": "node src/cli.js doctor"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "nats": "^2.29.0"
+  }
+}

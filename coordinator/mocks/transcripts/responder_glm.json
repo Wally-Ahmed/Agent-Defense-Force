@@ -1,0 +1,81 @@
+{
+  "transcript_version": 1,
+  "responder": "responder_glm",
+  "recorded_at_ms": 1769472000000,
+  "scenario": "credential-stuffing -> session hijack -> data exfiltration",
+  "assessment": {
+    "incident_id": "inc-2026-07-26-a1f4c2",
+    "responder": "responder_glm",
+    "model": "z-ai/glm-5.2",
+    "effort_requested": "medium",
+    "effort_effective": "medium",
+    "verdict": "benign",
+    "confidence": 0.41,
+    "campaign_stages": [1, 2],
+    "recommended_actions": [],
+    "skills_used": [
+      {
+        "path": "skills/nist/csf-2.0-respond.md",
+        "sha": "4c74c525f86af7bfc16793290f2d114fa018adf2"
+      }
+    ],
+    "rationale": "Reading this as a probable false positive. The stuffing traffic looks like background internet spray, the flagged auth follows a self-service password reset for this principal, and bulk_export volume tracks the warehouse_sync quarter-close run on its usual schedule. New ASN is consistent with a VPN egress change. Benign.",
+    "usage": {
+      "in": 17640,
+      "out": 1310,
+      "reasoning": 640,
+      "usd": 0.014552
+    }
+  },
+  "deliberation": {
+    "round": 1,
+    "revised": {
+      "incident_id": "inc-2026-07-26-a1f4c2",
+      "responder": "responder_glm",
+      "model": "z-ai/glm-5.2",
+      "effort_requested": "medium",
+      "effort_effective": "medium",
+      "verdict": "suspicious",
+      "confidence": 0.58,
+      "campaign_stages": [1, 2, 3, 4, 7],
+      "recommended_actions": [
+        {
+          "action": "revoke_session",
+          "target": {
+            "principal_hash": "ph_9f2c41ab7d0e5613",
+            "tenant": "tenant_northwind",
+            "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+          },
+          "ttl_s": 3600,
+          "blast_radius": "moderate"
+        },
+        {
+          "action": "raise_logging",
+          "target": {
+            "principal_hash": "ph_9f2c41ab7d0e5613",
+            "tenant": "tenant_northwind"
+          },
+          "ttl_s": 21600,
+          "blast_radius": "narrow"
+        }
+      ],
+      "skills_used": [
+        {
+          "path": "skills/attack/T1078-valid-accounts.md",
+          "sha": "7bf8056c159fe8cde30908af07813dc42f98170c"
+        },
+        {
+          "path": "skills/attack/T1110.004-credential-stuffing.md",
+          "sha": "3955ea717e0e71911fb816ff6dc8c1cb8091331b"
+        }
+      ],
+      "rationale": "Withdrawing the benign read. The password-reset correlation was mine alone, and peers show the export burst is off-schedule for warehouse_sync and issued from the reused session, not the integration credential. Moving to suspicious and backing session revocation plus raised logging while the export path is reviewed.",
+      "usage": {
+        "in": 6050,
+        "out": 720,
+        "reasoning": 380,
+        "usd": 0.005559
+      }
+    }
+  }
+}

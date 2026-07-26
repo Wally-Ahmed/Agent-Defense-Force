@@ -1,0 +1,145 @@
+{
+  "transcript_version": 1,
+  "responder": "responder_codex",
+  "recorded_at_ms": 1769472000000,
+  "scenario": "credential-stuffing -> session hijack -> data exfiltration",
+  "assessment": {
+    "incident_id": "inc-2026-07-26-a1f4c2",
+    "responder": "responder_codex",
+    "model": "openai/gpt-5.6-sol",
+    "effort_requested": "xhigh",
+    "effort_effective": "xhigh",
+    "verdict": "malicious",
+    "confidence": 0.91,
+    "campaign_stages": [1, 2, 3, 4, 5, 7, 8],
+    "recommended_actions": [
+      {
+        "action": "revoke_session",
+        "target": {
+          "principal_hash": "ph_9f2c41ab7d0e5613",
+          "tenant": "tenant_northwind",
+          "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+        },
+        "ttl_s": 3600,
+        "blast_radius": "moderate"
+      },
+      {
+        "action": "block_source",
+        "target": {
+          "tenant": "tenant_northwind",
+          "src_ips": ["198.51.100.42", "203.0.113.77"]
+        },
+        "ttl_s": 7200,
+        "blast_radius": "moderate"
+      },
+      {
+        "action": "feature_readonly",
+        "target": {
+          "tenant": "tenant_northwind",
+          "feature": "bulk_export"
+        },
+        "ttl_s": 3600,
+        "blast_radius": "moderate"
+      },
+      {
+        "action": "rotate_service_credential",
+        "target": {
+          "credential_id": "svc_cred_reporting_01",
+          "integration": "warehouse_sync"
+        },
+        "ttl_s": 900,
+        "blast_radius": "narrow"
+      }
+    ],
+    "skills_used": [
+      {
+        "path": "skills/attack/T1110.004-credential-stuffing.md",
+        "sha": "f9cb2bb131694869bc56fb938c25c0f26d05bc06"
+      },
+      {
+        "path": "skills/attack/T1567-exfiltration-over-web-service.md",
+        "sha": "df38d0c24096f30a262e1ce5268e6a98ab423060"
+      },
+      {
+        "path": "skills/nist/csf-2.0-respond.md",
+        "sha": "f3fcf64ad76f805ee9905e88229ad6e9bccb1838"
+      }
+    ],
+    "rationale": "Stage chain is coherent: spray from a distributed source set, one credential succeeds, session token reused from an unrelated ASN, then export_jobs saturated with bulk_export requests well outside baseline. Volume and inter-arrival timing rule out a scheduled job. Malicious. Contain the session and the source set, hold bulk_export read-only.",
+    "usage": {
+      "in": 18420,
+      "out": 2680,
+      "reasoning": 2010,
+      "usd": 0.1725
+    }
+  },
+  "deliberation": {
+    "round": 1,
+    "revised": {
+      "incident_id": "inc-2026-07-26-a1f4c2",
+      "responder": "responder_codex",
+      "model": "openai/gpt-5.6-sol",
+      "effort_requested": "xhigh",
+      "effort_effective": "xhigh",
+      "verdict": "malicious",
+      "confidence": 0.92,
+      "campaign_stages": [1, 2, 3, 4, 5, 7, 8],
+      "recommended_actions": [
+        {
+          "action": "revoke_session",
+          "target": {
+            "principal_hash": "ph_9f2c41ab7d0e5613",
+            "tenant": "tenant_northwind",
+            "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+          },
+          "ttl_s": 1800,
+          "blast_radius": "narrow"
+        },
+        {
+          "action": "block_source",
+          "target": {
+            "tenant": "tenant_northwind",
+            "src_ips": ["198.51.100.42", "203.0.113.77"]
+          },
+          "ttl_s": 5400,
+          "blast_radius": "moderate"
+        },
+        {
+          "action": "feature_readonly",
+          "target": {
+            "tenant": "tenant_northwind",
+            "feature": "bulk_export"
+          },
+          "ttl_s": 2700,
+          "blast_radius": "moderate"
+        },
+        {
+          "action": "rotate_service_credential",
+          "target": {
+            "credential_id": "svc_cred_reporting_01",
+            "integration": "warehouse_sync"
+          },
+          "ttl_s": 900,
+          "blast_radius": "narrow"
+        }
+      ],
+      "skills_used": [
+        {
+          "path": "skills/nist/csf-2.0-respond.md",
+          "sha": "8a0db5bbb2bfba329cb994d85d4ebb336b3902fd"
+        },
+        {
+          "path": "skills/attack/T1567-exfiltration-over-web-service.md",
+          "sha": "f0c7682c2b703257ae18a2d41ac11cd192b4f468"
+        }
+      ],
+      "rationale": "No peer surfaced a benign explanation for the ASN-shift token reuse, and the export burst still exceeds baseline after the quarter-close adjustment. Verdict unchanged: malicious. Narrowing revoke_session to the two named sessions and halving its TTL; credential rotation stays a single-proposer suggestion, not a demand.",
+      "usage": {
+        "in": 6340,
+        "out": 910,
+        "reasoning": 660,
+        "usd": 0.059
+      }
+    }
+  }
+}

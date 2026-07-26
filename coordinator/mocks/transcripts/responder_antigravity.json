@@ -1,0 +1,114 @@
+{
+  "transcript_version": 1,
+  "responder": "responder_antigravity",
+  "recorded_at_ms": 1769472000000,
+  "scenario": "credential-stuffing -> session hijack -> data exfiltration",
+  "assessment": {
+    "incident_id": "inc-2026-07-26-a1f4c2",
+    "responder": "responder_antigravity",
+    "model": "google/gemini-3.1-pro-preview",
+    "effort_requested": "high",
+    "effort_effective": "high",
+    "verdict": "suspicious",
+    "confidence": 0.64,
+    "campaign_stages": [1, 2, 4, 7],
+    "recommended_actions": [
+      {
+        "action": "revoke_session",
+        "target": {
+          "principal_hash": "ph_9f2c41ab7d0e5613",
+          "tenant": "tenant_northwind",
+          "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+        },
+        "ttl_s": 3600,
+        "blast_radius": "moderate"
+      },
+      {
+        "action": "pause_queue",
+        "target": {
+          "tenant": "tenant_northwind",
+          "queue": "export_jobs"
+        },
+        "ttl_s": 1200,
+        "blast_radius": "moderate"
+      }
+    ],
+    "skills_used": [
+      {
+        "path": "skills/attack/T1078-valid-accounts.md",
+        "sha": "0a597007b9a0ca6b09e1659444627a7fc66da879"
+      },
+      {
+        "path": "skills/nist/csf-2.0-detect.md",
+        "sha": "1e8b6cd8cca8dd7f16eded5641c501646a18d206"
+      }
+    ],
+    "rationale": "Credential stuffing and the one successful auth are well evidenced. Session reuse from a new ASN fits hijack, but also fits a mobile carrier hand-off, and the bulk_export spike lands inside this tenant's quarter-close window. Enough to revoke the session and pause export_jobs; not enough to call confirmed exfiltration. Suspicious.",
+    "usage": {
+      "in": 18930,
+      "out": 1980,
+      "reasoning": 1240,
+      "usd": 0.06162
+    }
+  },
+  "deliberation": {
+    "round": 1,
+    "revised": {
+      "incident_id": "inc-2026-07-26-a1f4c2",
+      "responder": "responder_antigravity",
+      "model": "google/gemini-3.1-pro-preview",
+      "effort_requested": "high",
+      "effort_effective": "high",
+      "verdict": "malicious",
+      "confidence": 0.79,
+      "campaign_stages": [1, 2, 3, 4, 6, 7],
+      "recommended_actions": [
+        {
+          "action": "revoke_session",
+          "target": {
+            "principal_hash": "ph_9f2c41ab7d0e5613",
+            "tenant": "tenant_northwind",
+            "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+          },
+          "ttl_s": 3600,
+          "blast_radius": "narrow"
+        },
+        {
+          "action": "pause_queue",
+          "target": {
+            "tenant": "tenant_northwind",
+            "queue": "export_jobs"
+          },
+          "ttl_s": 1200,
+          "blast_radius": "moderate"
+        },
+        {
+          "action": "feature_readonly",
+          "target": {
+            "tenant": "tenant_northwind",
+            "feature": "bulk_export"
+          },
+          "ttl_s": 2400,
+          "blast_radius": "moderate"
+        }
+      ],
+      "skills_used": [
+        {
+          "path": "skills/attack/T1539-steal-web-session-cookie.md",
+          "sha": "f9305c1a066a97df7f97c303fc118c07f8d3db10"
+        },
+        {
+          "path": "skills/nist/csf-2.0-respond.md",
+          "sha": "c1f4b674758804f219ca25f0bad387399d3e0f15"
+        }
+      ],
+      "rationale": "The carrier hand-off hypothesis does not survive peer review: the reuse came from a different ASN and a different device fingerprint, and export volume exceeds the quarter-close baseline, not just the daily one. Moving suspicious to malicious. Adding a bulk_export read-only hold alongside the session revocation.",
+      "usage": {
+        "in": 6480,
+        "out": 860,
+        "reasoning": 540,
+        "usd": 0.02328
+      }
+    }
+  }
+}

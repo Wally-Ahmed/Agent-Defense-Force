@@ -1,0 +1,141 @@
+{
+  "transcript_version": 1,
+  "responder": "responder_claude",
+  "recorded_at_ms": 1769472000000,
+  "scenario": "credential-stuffing -> session hijack -> data exfiltration",
+  "assessment": {
+    "incident_id": "inc-2026-07-26-a1f4c2",
+    "responder": "responder_claude",
+    "model": "anthropic/claude-opus-5",
+    "effort_requested": "high",
+    "effort_effective": "high",
+    "verdict": "malicious",
+    "confidence": 0.93,
+    "campaign_stages": [1, 2, 3, 4, 6, 7],
+    "recommended_actions": [
+      {
+        "action": "revoke_session",
+        "target": {
+          "principal_hash": "ph_9f2c41ab7d0e5613",
+          "tenant": "tenant_northwind",
+          "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+        },
+        "ttl_s": 3600,
+        "blast_radius": "narrow"
+      },
+      {
+        "action": "block_source",
+        "target": {
+          "tenant": "tenant_northwind",
+          "src_ips": ["198.51.100.42", "203.0.113.77"]
+        },
+        "ttl_s": 7200,
+        "blast_radius": "moderate"
+      },
+      {
+        "action": "feature_readonly",
+        "target": {
+          "tenant": "tenant_northwind",
+          "feature": "bulk_export"
+        },
+        "ttl_s": 1800,
+        "blast_radius": "moderate"
+      },
+      {
+        "action": "raise_logging",
+        "target": {
+          "principal_hash": "ph_9f2c41ab7d0e5613",
+          "tenant": "tenant_northwind"
+        },
+        "ttl_s": 21600,
+        "blast_radius": "narrow"
+      }
+    ],
+    "skills_used": [
+      {
+        "path": "skills/attack/T1110.004-credential-stuffing.md",
+        "sha": "c0d6e325ddc1745b0a93684a8a8d21c6766e7533"
+      },
+      {
+        "path": "skills/attack/T1078-valid-accounts.md",
+        "sha": "380d8cba61426182ba6aaca7fe8b654f308b16cb"
+      },
+      {
+        "path": "skills/d3fend/session-invalidation.md",
+        "sha": "c3d625fd321ac77f26da0285bcbc29fdfd4d1083"
+      }
+    ],
+    "rationale": "Distributed credential stuffing against this tenant produced one successful auth on ph_9f2c41ab7d0e5613; the issued session token was then replayed from a new ASN within minutes, followed by bulk_export volume far above the principal's 30-day baseline. Sequential, single-principal, exfiltration-shaped. Calling it malicious.",
+    "usage": {
+      "in": 18420,
+      "out": 2140,
+      "reasoning": 1560,
+      "usd": 0.1456
+    }
+  },
+  "deliberation": {
+    "round": 1,
+    "revised": {
+      "incident_id": "inc-2026-07-26-a1f4c2",
+      "responder": "responder_claude",
+      "model": "anthropic/claude-opus-5",
+      "effort_requested": "high",
+      "effort_effective": "high",
+      "verdict": "malicious",
+      "confidence": 0.95,
+      "campaign_stages": [1, 2, 3, 4, 6, 7],
+      "recommended_actions": [
+        {
+          "action": "revoke_session",
+          "target": {
+            "principal_hash": "ph_9f2c41ab7d0e5613",
+            "tenant": "tenant_northwind",
+            "session_ids": ["sess_7c19aa4e", "sess_be03d17f"]
+          },
+          "ttl_s": 1800,
+          "blast_radius": "narrow"
+        },
+        {
+          "action": "block_source",
+          "target": {
+            "tenant": "tenant_northwind",
+            "src_ips": ["198.51.100.42", "203.0.113.77"]
+          },
+          "ttl_s": 3600,
+          "blast_radius": "moderate"
+        },
+        {
+          "action": "feature_readonly",
+          "target": {
+            "tenant": "tenant_northwind",
+            "feature": "bulk_export"
+          },
+          "ttl_s": 1800,
+          "blast_radius": "narrow"
+        },
+        {
+          "action": "raise_logging",
+          "target": {
+            "principal_hash": "ph_9f2c41ab7d0e5613",
+            "tenant": "tenant_northwind"
+          },
+          "ttl_s": 21600,
+          "blast_radius": "narrow"
+        }
+      ],
+      "skills_used": [
+        {
+          "path": "skills/d3fend/session-invalidation.md",
+          "sha": "24764ed5980a6822bffe6ec6c848fd275d630daa"
+        }
+      ],
+      "rationale": "Peer round is consistent with my read; nobody produced a benign path that survives the token-reuse timing. Holding malicious, confidence up. Tightening rather than widening containment: shorter session revocation TTL and a narrow bulk_export read-only hold so legitimate quarter-close work is not blocked.",
+      "usage": {
+        "in": 6120,
+        "out": 780,
+        "reasoning": 520,
+        "usd": 0.0501
+      }
+    }
+  }
+}
