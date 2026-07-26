@@ -146,7 +146,7 @@ def live_factory(responder_id: str, opts: dict) -> ResponderHandle {
 # --------------------------------------------------------------------------
 # kind -> factory(responder_id: str, opts: dict) -> ResponderHandle
 
-glob:pub RESPONDER_FACTORIES: dict = {};
+glob:pub RESPONDER_FACTORIES: dict[str, Any] = {};
 
 """Register `factory` under `kind`. Re-registering a kind replaces it, which is
 how a test swaps an implementation without touching config."""

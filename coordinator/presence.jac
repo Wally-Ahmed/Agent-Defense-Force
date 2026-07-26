@@ -54,7 +54,7 @@ def is_valid_status(status: str) -> bool {
 Deliberately dumb: it never calls a responder and never waits. The coordinator
 writes what responders report and then asks `is_live` / `dead_agents`."""
 obj PresenceStore {
-    has cards: dict = {};          # agent id -> PresenceCard
+    has cards: dict[str, PresenceCard] = {};   # agent id -> PresenceCard
 
     """Upsert a card. Last write wins — the store keeps no history."""
     def put(card: PresenceCard) -> None {
@@ -154,7 +154,8 @@ obj PresenceStore {
     def snapshot -> dict {
         out: dict = {};
         for a in sorted(self.cards.keys()) {
-            out[a] = self.cards[a].as_dict();
+            card: PresenceCard = self.cards[a];
+            out[a] = card.as_dict();
         }
         return out;
     }

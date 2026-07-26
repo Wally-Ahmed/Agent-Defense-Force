@@ -57,7 +57,7 @@ obj ResponderConfig {
 
 """The full five-responder mesh configuration."""
 obj MeshConfig {
-    has responders: list = [];    # list[ResponderConfig], one per RESPONDER_IDS
+    has responders: list[ResponderConfig] = [];   # one per RESPONDER_IDS
     has run_label: str = "LIVE";
 
     """Reject a mesh the coordinator could not run deterministically.
@@ -202,7 +202,13 @@ def build_mesh(cfg: MeshConfig, clock_now_ms: int) -> dict {
     mesh: dict = {};
     for rid in RESPONDER_IDS {
         rc = cfg.entry(rid);
-        opts = dict(rc.opts);
+        if rc is None {
+            # validate() already guarantees this; belt and braces against a
+            # future validate/build skew, which would otherwise silently drop
+            # a responder and hand the coordinator a four-agent mesh.
+            raise ValueError(f"config lost responder between validate and build: {rid}");
+        }
+        opts: dict = dict(rc.opts);
         opts["now_ms"] = clock_now_ms;
         mesh[rid] = build_responder(rc.kind, rid, opts);
     }

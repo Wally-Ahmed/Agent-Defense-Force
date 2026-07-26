@@ -20,6 +20,7 @@
 
 import json;
 import os;
+import from typing { Any }
 import from jsonschema { Draft202012Validator }
 
 import from ids { RESPONDER_IDS, PRESENCE_STALE_MS, RUN_MOCKED, RUN_LIVE }
@@ -58,7 +59,7 @@ glob:pub SCHEMA_PATH: str = os.path.join(
 
 Read, never copied: if the contract moves, these tests fail rather than pass
 against a stale duplicate."""
-def assessment_validator -> Draft202012Validator {
+def assessment_validator -> Any {
     with open(SCHEMA_PATH, "r") as fh {
         schema = json.load(fh);
     }
@@ -67,9 +68,29 @@ def assessment_validator -> Draft202012Validator {
 }
 
 """Sorted schema-violation messages for `payload`. Empty list means valid."""
-def schema_errors(payload: dict) -> list {
+def schema_errors(payload: Any) -> list {
     validator = assessment_validator();
-    return sorted([e.message for e in validator.iter_errors(payload)]);
+    out: list = [];
+    for e in validator.iter_errors(payload) {
+        out.append(str(e.message));
+    }
+    return sorted(out);
+}
+
+"""Narrow an optional presence card, failing the test if there is none."""
+def must_card(card: PresenceCard | None) -> PresenceCard {
+    if card is None {
+        raise AssertionError("expected a presence card, got none");
+    }
+    return card;
+}
+
+"""Narrow an optional config entry, failing the test if there is none."""
+def must_entry(rc: ResponderConfig | None) -> ResponderConfig {
+    if rc is None {
+        raise AssertionError("expected a responder config entry, got none");
+    }
+    return rc;
 }
 
 """A representative incident for the authorised scenario.
@@ -103,7 +124,7 @@ test "every canonical responder has a transcript file on disk" {
 
 test "every recorded transcript is a schema-valid assessment.v1" {
     for rid in RESPONDER_IDS {
-        t = load_transcript(rid);
+        t: Any = load_transcript(rid);
         assert t["assessment"]["responder"] == rid;
         errs = schema_errors(t["assessment"]);
         assert errs == [], f"{rid} assessment: {errs}";
@@ -113,9 +134,9 @@ test "every recorded transcript is a schema-valid assessment.v1" {
 
 test "every recorded deliberation revision is a schema-valid assessment.v1" {
     for rid in RESPONDER_IDS {
-        t = load_transcript(rid);
+        t: Any = load_transcript(rid);
         assert "deliberation" in t;
-        revised = t["deliberation"]["revised"];
+        revised: Any = t["deliberation"]["revised"];
         errs = schema_errors(revised);
         assert errs == [], f"{rid} revised: {errs}";
         assert revised["responder"] == rid;
@@ -127,7 +148,7 @@ test "transcripts are genuinely different, so quorum logic has something to do" 
     verdicts: list = [];
     confidences: list = [];
     for rid in RESPONDER_IDS {
-        a = load_transcript(rid)["assessment"];
+        a: Any = load_transcript(rid)["assessment"];
         verdicts.append(a["verdict"]);
         confidences.append(a["confidence"]);
     }
@@ -141,9 +162,9 @@ test "a mock emits a schema-valid assessment carrying the incident id verbatim" 
     for rid in RESPONDER_IDS {
         mock = mock_from_transcript(rid, {});
         mock.escalate(incident, clock.now_ms());
-        got = mock.poll(clock.now_ms());
+        got: Any = mock.poll(clock.now_ms());
         assert len(got) == 1;
-        a = got[0];
+        a: Any = got[0];
         assert a["incident_id"] == "inc-2026-07-26-verbatim";
         assert a["responder"] == rid;
         assert schema_errors(a) == [];
@@ -158,7 +179,7 @@ test "a mock's deliberation revision is schema-valid and bounded to one round" {
     assert len(mock.poll(clock.now_ms())) == 1;
 
     mock.open_deliberation("inc-split-0001", 1, clock.advance(1000));
-    revised = mock.poll(clock.now_ms());
+    revised: Any = mock.poll(clock.now_ms());
     assert len(revised) == 1;
     assert revised[0]["incident_id"] == "inc-split-0001";
     assert schema_errors(revised[0]) == [];
@@ -241,7 +262,7 @@ test "build_mesh returns five ResponderHandles keyed by the canonical ids" {
 test "swapping mock to live is one config field, and the mesh still builds" {
     clock = frozen_clock();
     cfg = default_mock_config();
-    cfg.entry("responder_codex").kind = "live";     # <-- the entire swap
+    must_entry(cfg.entry("responder_codex")).kind = "live";     # <-- the entire swap
     mesh = build_mesh(cfg, clock.now_ms());
     assert len(mesh) == 5;
     for rid in RESPONDER_IDS {
@@ -265,7 +286,7 @@ test "one mock anywhere in the mesh forces the run label to MOCKED" {
     assert live_cfg.effective_run_label() == RUN_LIVE;
 
     # A single mock contaminates an otherwise live run.
-    live_cfg.entry("responder_glm").kind = "mock";
+    must_entry(live_cfg.entry("responder_glm")).kind = "mock";
     assert live_cfg.is_mocked();
     assert live_cfg.effective_run_label() == RUN_MOCKED;
     build_mesh(live_cfg, 0);
@@ -295,7 +316,7 @@ test "config validation rejects a missing, duplicated or unknown responder" {
     assert raised;
 
     bad_kind = default_mock_config();
-    bad_kind.entry("responder_kimi").kind = "telepathy";
+    must_entry(bad_kind.entry("responder_kimi")).kind = "telepathy";
     raised = False;
     try { bad_kind.validate(); } except ValueError as e { raised = True; }
     assert raised;
@@ -314,7 +335,7 @@ test "a 5000ms mock yields nothing at t+4999, exactly one at t+5000, nothing aft
     assert mock.poll(t0) == [];
     assert mock.poll(t0 + 4999) == [];
 
-    got = mock.poll(t0 + 5000);
+    got: Any = mock.poll(t0 + 5000);
     assert len(got) == 1;
     assert got[0]["responder"] == "responder_codex";
 
@@ -339,7 +360,7 @@ test "a dead mock never answers and its presence card is not live" {
     assert mock.poll(t0 + 180000) == [];      # the whole ASSESSING window
 
     store = PresenceStore();
-    card = mock.presence(t0 + 1000);
+    card: Any = mock.presence(t0 + 1000);
     assert card["status"] == "offline";
     store.put(PresenceCard(
         agent=card["agent"],
@@ -360,11 +381,11 @@ test "a mock that goes dark still claims working, and presence catches it anyway
     );
     store = PresenceStore();
 
-    fresh = mock.presence(t0 + 1000);
+    fresh: Any = mock.presence(t0 + 1000);
     assert fresh["status"] == "working";
     assert fresh["heartbeat_ms"] == t0 + 1000;
 
-    dark = mock.presence(t0 + 20000);
+    dark: Any = mock.presence(t0 + 20000);
     # The upstream bug, faithfully reproduced: it still says `working`.
     assert dark["status"] == "working";
     assert dark["heartbeat_ms"] == t0 + 1000;
@@ -397,7 +418,7 @@ test "an offline card is never live, however fresh, and a missing card is never 
     store.mark_offline("responder_kimi", 5000);
     assert not store.is_live("responder_kimi", 5000);
     assert not store.is_live("responder_kimi", 5001);
-    assert store.get("responder_kimi").status == "offline";
+    assert must_card(store.get("responder_kimi")).status == "offline";
 
     assert store.get("responder_nobody") is None;
     assert not store.is_live("responder_nobody", 0);
@@ -413,13 +434,13 @@ test "a heartbeat from the future is skew, not death" {
 test "heartbeat bumps seq and mark_offline is just a heartbeat with a status" {
     store = PresenceStore();
     store.heartbeat("responder_codex", 1000);
-    assert store.get("responder_codex").seq == 1;
+    assert must_card(store.get("responder_codex")).seq == 1;
     store.heartbeat("responder_codex", 3000);
-    assert store.get("responder_codex").seq == 2;
-    assert store.get("responder_codex").heartbeat_ms == 3000;
+    assert must_card(store.get("responder_codex")).seq == 2;
+    assert must_card(store.get("responder_codex")).heartbeat_ms == 3000;
     store.mark_offline("responder_codex", 5000);
-    assert store.get("responder_codex").seq == 3;
-    assert store.get("responder_codex").status == "offline";
+    assert must_card(store.get("responder_codex")).seq == 3;
+    assert must_card(store.get("responder_codex")).status == "offline";
 
     raised = False;
     try { store.heartbeat("responder_codex", 6000, "vibing"); }
@@ -438,7 +459,7 @@ test "dead_agents returns the sorted non-live ids and snapshot is key-sorted" {
     assert dead == ["responder_claude", "responder_kimi"];
     assert dead == sorted(dead);
 
-    snap = store.snapshot();
+    snap: Any = store.snapshot();
     assert list(snap.keys()) == sorted(RESPONDER_IDS);
     assert snap["responder_kimi"]["status"] == "offline";
     assert list(snap["responder_glm"].keys()) == ["agent", "status", "heartbeat_ms", "seq"];
@@ -469,7 +490,7 @@ test "a responder killed before escalation still answers after it reconnects" {
     mock.revive(t0 + 120000);
     assert mock.is_alive();
     assert mock.poll(t0 + 120000) == [];               # latency still applies
-    got = mock.poll(t0 + 122000);
+    got: Any = mock.poll(t0 + 122000);
     assert len(got) == 1;
     assert got[0]["incident_id"] == "inc-durable-0001";
     assert got[0]["responder"] == "responder_kimi";
@@ -477,7 +498,7 @@ test "a responder killed before escalation still answers after it reconnects" {
     assert mock.poll(t0 + 122000) == [];               # still at-most-once
 
     # And it heartbeats again once revived.
-    card = mock.presence(t0 + 122000);
+    card: Any = mock.presence(t0 + 122000);
     assert card["status"] == "working";
     assert card["heartbeat_ms"] == t0 + 122000;
 }
@@ -493,7 +514,7 @@ test "a responder that dies mid-flight holds its assessment rather than losing i
 
     mock.revive(t0 + 10000);
     assert mock.poll(t0 + 12999) == [];
-    got = mock.poll(t0 + 13000);
+    got: Any = mock.poll(t0 + 13000);
     assert len(got) == 1;
     assert got[0]["incident_id"] == "inc-midflight-0001";
 }
@@ -586,7 +607,7 @@ test "overrides are deterministic and never leak back into the transcript" {
         {"verdict_override": "benign", "confidence_override": 0.11}
     );
     forced.escalate(incident, clock.now_ms());
-    got = forced.poll(clock.now_ms())[0];
+    got: Any = forced.poll(clock.now_ms())[0];
     assert got["verdict"] == "benign";
     assert got["confidence"] == 0.11;
     assert schema_errors(got) == [];
@@ -596,8 +617,8 @@ test "overrides are deterministic and never leak back into the transcript" {
     got["recommended_actions"] = [];
     clean = mock_from_transcript("responder_glm", {});
     clean.escalate(incident, clock.now_ms());
-    fresh = clean.poll(clock.now_ms())[0];
-    recorded = load_transcript("responder_glm")["assessment"];
+    fresh: Any = clean.poll(clock.now_ms())[0];
+    recorded: Any = load_transcript("responder_glm")["assessment"];
     assert fresh["verdict"] == recorded["verdict"];
     assert fresh["recommended_actions"] == recorded["recommended_actions"];
 }

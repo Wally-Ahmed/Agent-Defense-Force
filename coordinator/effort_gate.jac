@@ -197,7 +197,7 @@ def parse_receipts(path: str) -> list {
         });
         return out;
     }
-    n = 0;
+    n: int = 0;
     for line in raw.splitlines() {
         n = (n + 1);
         stripped = line.strip();
@@ -255,10 +255,10 @@ def evaluate_receipts(receipts: list) -> GateResult {
     mocked: list = [];
     counts: dict = {};
 
-    idx = -1;
+    idx: int = -1;
     for item in receipts {
         idx = (idx + 1);
-        rec = _as_record(item, idx);
+        rec: dict = _as_record(item, idx);
         ln = rec.get("_line", (idx + 1));
 
         if not rec.get("_ok", False) {

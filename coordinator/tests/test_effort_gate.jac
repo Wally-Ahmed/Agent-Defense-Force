@@ -62,32 +62,32 @@ def audit_file(path: str) -> dict {
             continue;
         }
         lines = (lines + 1);
-        obj: dict = {};
+        row: dict = {};
         parsed_ok: bool = True;
         try {
-            obj = json.loads(s);
+            row = json.loads(s);
         } except Exception as e {
             parsed_ok = False;
         }
-        if (not parsed_ok) or (not isinstance(obj, dict)) {
+        if (not parsed_ok) or (not isinstance(row, dict)) {
             bad = (bad + 1);
             continue;
         }
         complete: bool = True;
         for k in REQUIRED_FIELDS {
-            if k not in obj {
+            if k not in row {
                 complete = False;
             }
         }
         # additionalProperties:false, so an extra key is just as invalid.
-        if (not complete) or (len(obj.keys()) != len(REQUIRED_FIELDS)) {
+        if (not complete) or (len(row.keys()) != len(REQUIRED_FIELDS)) {
             bad = (bad + 1);
             continue;
         }
-        if obj["downgraded"] {
+        if row["downgraded"] {
             downgraded = (downgraded + 1);
         }
-        who = obj["agent"];
+        who = row["agent"];
         if who in EFFORT_GATE_AGENTS {
             counts[who] = (counts.get(who, 0) + 1);
         }
@@ -348,7 +348,9 @@ test "malformed / schema-invalid receipt lines -> refuses, and are reported not 
 
     evs = log.of_action(STATE_TRANSITION);
     assert evs[0]["state_to"] == "WATCHING";
-    assert len(evs[0]["detail"]["invalid"]) == 2;
+    assert evs[0]["detail"]["reason"] == "RECEIPT_INVALID";
+    assert evs[0]["detail"]["invalid"] == res.invalid;
+    assert evs[0]["detail"]["missing"] == [];
 }
 
 # ==========================================================================
