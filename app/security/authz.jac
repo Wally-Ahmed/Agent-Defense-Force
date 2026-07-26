@@ -371,11 +371,20 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     }
 
     # ----------------------------------------------------------------------
-    # Tenantless actions (creating a tenant) legitimately have no tenant to be
-    # a member of. They still required a verified ctx, a live credential and a
-    # clean control check to get here -- only steps 4-6 are skipped.
+    # Tenantless requests legitimately have no tenant to be a member of:
+    # creating the first one, and listing the ones you already belong to. They
+    # still required a verified ctx, a live credential and a clean control check
+    # to get here -- only steps 4-6 are skipped.
+    #
+    # BOTH conditions are load-bearing. An action on TENANTLESS_ACTIONS skips the
+    # tenancy checks only when the request carries NO tenant scope at all, because
+    # one audit action can serve two endpoints: `tenant.read` covers `GET /tenants`
+    # (tenantless) and `GET /tenants/{tenant_id}` (very much not). Keying on the
+    # action alone would have let a request name any tenant_id it liked and skip
+    # TENANT_MISMATCH and NOT_A_MEMBER with it. A tenantless action presented WITH
+    # a tenant_id falls through to steps 4-6 and is checked in full.
     # ----------------------------------------------------------------------
-    if action in TENANTLESS_ACTIONS {
+    if action in TENANTLESS_ACTIONS and tenant_id == "" {
         return _decide(base, True, "", principal=actor);
     }
 

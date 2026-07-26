@@ -82,9 +82,27 @@ glob:pub ACTION_MIN_ROLE: dict = {
 
 # Actions that legitimately have no tenant to be a member of yet. guard() still
 # demands a verified ctx, a live session, and a clean control check for these;
-# it skips only the membership and role steps. Keeping this list to two entries
-# is the point -- every addition widens the unauthenticated-ish surface.
-glob:pub TENANTLESS_ACTIONS: list = ["tenant.create"];
+# it skips only the membership and role steps. Keeping this list short is the
+# point -- every addition widens the unauthenticated-ish surface.
+#
+# Membership of this list is NOT on its own enough to skip those steps. guard()
+# additionally requires `tenant_id == ""` -- see the tenantless block in
+# app/security/authz.jac. That second condition is what makes this list safe to
+# extend: `tenant.read` is the audit action for BOTH `GET /tenants` (no tenant in
+# the path) and `GET /tenants/{tenant_id}` (one very much in the path), and only
+# the first may skip the tenancy checks. Without the tenant_id condition, adding
+# `tenant.read` here would have let a Globex session read the Acme tenant record
+# and the whole member roster with it.
+#
+#   tenant.create -- POST /tenants. There is no tenant yet to be a member of.
+#   tenant.read   -- GET /tenants (ListMyTenants) ONLY, by the tenant_id == ""
+#                    condition above. A freshly-logged-in principal has no tenant
+#                    scope yet, and this endpoint is how they discover which
+#                    tenants they belong to. The walker resolves nothing by id:
+#                    tenants_for(principal_id) projects the caller's OWN active
+#                    memberships, so a tenant they have no membership edge to
+#                    never appears in the result.
+glob:pub TENANTLESS_ACTIONS: list = ["tenant.create", "tenant.read"];
 
 # Actions whose whole purpose is to CREATE the membership, so requiring one
 # first is circular. The walker must validate a bearer secret (the invite token)

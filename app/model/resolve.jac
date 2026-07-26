@@ -141,6 +141,28 @@ def:pub membership_of(tenant: Tenant, principal_id: str) -> Membership | None {
     return None;
 }
 
+"""The Membership with `membership_id` INSIDE this tenant, or None.
+
+The public API addresses a membership by membership_id -- PATCH and DELETE
+/tenants/{tenant_id}/members/{membership_id} -- so this is what resolves a
+`member` target. It is membership_of() with a different field matched, and
+deliberately so: the traversal is identical, Tenant --HasMember--> Membership,
+which is what keeps the isolation guarantee intact. A membership_id belonging to
+another tenant is not compared and rejected here; the walk never visits it, so
+it is unreachable in exactly the way a foreign project id is, and the caller
+cannot distinguish it from an id that was never issued."""
+def:pub membership_in(tenant: Tenant, membership_id: str) -> Membership | None {
+    if membership_id == "" {
+        return None;
+    }
+    for m in [tenant->:HasMember:->][?:Membership] {
+        if m.membership_id == membership_id {
+            return m;
+        }
+    }
+    return None;
+}
+
 """Every membership in a tenant."""
 def:pub memberships_of(tenant: Tenant) -> list[Membership] {
     return [tenant->:HasMember:->][?:Membership];
@@ -317,7 +339,13 @@ def:pub resolve_in_tenant(tenant: Tenant, target_kind: str, target_id: str) -> o
         return export_in(tenant, target_id);
     }
     if target_kind == "member" {
-        return membership_of(tenant, target_id);
+        # BY MEMBERSHIP_ID, not principal_id: the API addresses a membership by
+        # its own id (PATCH/DELETE /tenants/{tenant_id}/members/{membership_id}).
+        # membership_of() answers a different question -- "which membership does
+        # THIS PRINCIPAL hold here" -- and is what guard() uses at step 4 to
+        # establish the ACTOR's role. Resolving a target through it made every
+        # membership_id unresolvable and denied both walkers NOT_FOUND.
+        return membership_in(tenant, target_id);
     }
     # tenant / auth / token / integration have no in-tenant child to resolve.
     return None;

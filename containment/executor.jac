@@ -39,6 +39,7 @@
 import os;
 import json;
 import time;
+import hashlib;
 
 import from contracts.containment_contract { ContainmentAction, Control, CONTAINMENT_KINDS }
 import from app.model.graph { Platform, Enforces, get_platform, all_controls }
@@ -149,6 +150,41 @@ def:pub control_surface() -> list {
     return rows;
 }
 
+"""Scope-key aliases a control needs to be legible to the gateway.
+
+INTERFACE DRIFT, HANDLED ADDITIVELY. `app/security/controls.key_ip()` — the
+shared builder guard() and this module both use — produces `ip:203.0.113.9`.
+`gateway/policy.ControlSource.throttle_rpm()` matches `scope_key` against the
+bare `src_ip` (or a `prefix:` form). Those two do not meet, so a throttle_source
+control written in the canonical dialect is inert at the gateway: no error, no
+log line, just a rate limit that never tightens.
+
+Neither side is modified here. The projection carries the canonical row exactly
+as the node holds it, PLUS an alias row in the gateway's dialect for the one
+kind the gateway actually matches on. `throttle_rpm` takes the minimum rpm over
+all matching rows, so a duplicate cannot loosen a limit — the worst it can do is
+agree with itself.
+
+This is a workaround for a real mismatch, not a fix. The owners of
+app/security/controls.jac and gateway/policy.jac should agree on one dialect."""
+def:pub gateway_aliases(row: dict) -> list {
+    kind: str = str(row["kind"]);
+    scope_key: str = str(row["scope_key"]);
+    if kind != "throttle_source" or not scope_key.startswith("ip:") {
+        return [];
+    }
+    alias: dict = {
+        "control_id": str(row["control_id"]) + "@gateway",
+        "kind": kind,
+        "scope_key": scope_key[3:],
+        "params": row["params"],
+        "expires_at": str(row["expires_at"]),
+        "active": bool(row["active"]),
+        "alias_of": str(row["control_id"])
+    };
+    return [alias];
+}
+
 """Write the JSON projection the gateway reads.
 
 Every control, live or not, with its `active` flag as recorded — the gateway
@@ -160,7 +196,15 @@ def:pub project_controls() -> str {
     if parent != "" {
         os.makedirs(parent, exist_ok=True);
     }
-    blob: dict = {"controls": control_surface(), "generated_at": iso_ts(now_ms())};
+    rows: list = [];
+    for r in control_surface() {
+        row: dict = r;
+        rows.append(row);
+        for alias in gateway_aliases(row) {
+            rows.append(alias);
+        }
+    }
+    blob: dict = {"controls": rows, "generated_at": iso_ts(now_ms())};
     handle = open(path, "w", encoding="utf-8");
     handle.write(json.dumps(blob, indent=2, sort_keys=False));
     handle.write("\n");
@@ -369,6 +413,115 @@ def:pub execute(request: dict) -> dict {
     rep5["surface_before"] = surface_before;
     rep5["surface_after"] = control_surface();
     return rep5;
+}
+
+# --------------------------------------------------------------------------
+# The coordinator's interface.
+# --------------------------------------------------------------------------
+
+"""Execute a whole decision.v1 document.
+
+This is what arrives on `toService:containment`. Two rules from the schema are
+enforced here rather than assumed:
+
+  - `contain == false` means DO NOTHING. The action_set is empty by construction
+    when contain is false, but an inconsistent document that carries actions
+    anyway must not have them applied — the coordinator's boolean is the
+    authority, not the presence of a list.
+  - `quorum_met == false` likewise. A decision reached without quorum never
+    contains, per the schema's own description.
+
+`action_id` is derived deterministically from the incident, the action and its
+target when the document does not carry one, so the SAME decision redelivered
+produces the SAME ids and the idempotency check in `execute()` recognises it.
+A random id per delivery would defeat the whole mechanism."""
+def:pub execute_decision(decision: dict) -> dict {
+    incident_id: str = str(decision.get("incident_id", ""));
+    contain: bool = bool(decision.get("contain", False));
+    quorum: bool = bool(decision.get("quorum_met", False));
+    degraded: bool = bool(decision.get("degraded", False));
+    approvals: dict = {};
+    if isinstance(decision.get("approvals", {}), dict) {
+        approvals = decision.get("approvals", {});
+    }
+
+    if (not contain) or (not quorum) {
+        return {
+            "ok": True, "incident_id": incident_id, "executed": 0,
+            "applied": 0, "proposed": 0, "failed": 0, "results": [],
+            "detail": "decision did not authorise containment (contain="
+                      + str(contain) + ", quorum_met=" + str(quorum) + ")"
+        };
+    }
+
+    action_set: list = [];
+    if isinstance(decision.get("action_set", []), list) {
+        action_set = decision.get("action_set", []);
+    }
+
+    results: list = [];
+    applied: int = 0;
+    proposed: int = 0;
+    failed: int = 0;
+    i: int = 0;
+    for raw in action_set {
+        entry: dict = raw;
+        kind: str = str(entry.get("action", ""));
+        aid: str = str(entry.get("action_id", ""));
+        if aid == "" {
+            aid = _derive_action_id(incident_id, kind, entry.get("target", {}), i);
+        }
+        request: dict = {
+            "action_id": aid,
+            "incident_id": incident_id,
+            "action": kind,
+            "target": entry.get("target", {}),
+            "ttl_s": entry.get("ttl_s", 0),
+            "blast_radius": entry.get("blast_radius", ""),
+            "proposed_by": entry.get("proposed_by", []),
+            "approved_by": str(approvals.get(aid, "")),
+            "params": entry.get("params", {}),
+            "health_check": str(entry.get("health_check", "")),
+            "created_by": "coordinator" + (":degraded" if degraded else "")
+        };
+        outcome: dict = execute(request);
+        results.append(outcome);
+        state: str = str(outcome["state"]);
+        if state == "active" {
+            applied = applied + 1;
+        } elif state == "proposed" {
+            proposed = proposed + 1;
+        } else {
+            failed = failed + 1;
+        }
+        i = i + 1;
+    }
+
+    return {
+        "ok": failed == 0,
+        "incident_id": incident_id,
+        "executed": len(results),
+        "applied": applied,
+        "proposed": proposed,
+        "failed": failed,
+        "degraded": degraded,
+        "results": results,
+        "detail": str(applied) + " applied, " + str(proposed)
+                  + " awaiting human approval, " + str(failed) + " not applied"
+    };
+}
+
+"""A stable action_id for an action_set entry that did not carry one.
+
+Deterministic in the incident, the kind, the target and the position — so a
+redelivered decision yields identical ids and `execute()` recognises it as a
+repeat rather than applying everything a second time."""
+def _derive_action_id(incident_id: str, kind: str, target: object, index: int) -> str {
+    canonical: str = json.dumps(target, sort_keys=True, separators=(",", ":"));
+    digest: str = hashlib.sha256(
+        (incident_id + "|" + kind + "|" + canonical).encode("utf-8")
+    ).hexdigest()[:16];
+    return incident_id + ":" + kind + ":" + digest;
 }
 
 # --------------------------------------------------------------------------

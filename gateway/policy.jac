@@ -147,6 +147,12 @@ obj ControlSource {
             hit = False;
             if scope == src_ip {
                 hit = True;
+            } elif scope == ("ip:" + src_ip) {
+                # app/security/controls.jac key_ip() writes the `ip:<addr>` form.
+                # Matching it here means a throttle_source control is never
+                # silently inert just because two modules spell the key
+                # differently. Both dialects are accepted deliberately.
+                hit = True;
             } elif scope.startswith("prefix:") and src_ip.startswith(scope[7:]) {
                 hit = True;
             } elif scope in ["*", "all"] {

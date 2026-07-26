@@ -36,7 +36,7 @@ import from containment.policy {
     tenant_actives, live_sessions_of
 }
 import from containment.executor {
-    execute, rollback, find_action, all_actions, control_surface,
+    execute, execute_decision, rollback, find_action, all_actions, control_surface,
     find_control_node, project_controls, controls_path, pending_path, Proposes
 }
 import from containment.probes {
@@ -948,6 +948,133 @@ def verify_8_structural() -> dict {
 }
 
 # ==========================================================================
+# 9. The coordinator interface and the gateway projection.
+# ==========================================================================
+
+def verify_9_decision() -> dict {
+    hr("VERIFICATION 9 — decision.v1 in, Controls out; and the gateway can read "
+       + "them");
+
+    base: dict = {
+        "incident_id": "inc_dec_001",
+        "decided_at_ms": now_ms(),
+        "verdict_counts": {"malicious": 4, "suspicious": 1, "benign": 0},
+        "score": 2.1,
+        "quorum_met": True,
+        "responders_voted": 5,
+        "responders_no_vote": [],
+        "degraded": False,
+        "rule": "contain iff >=3/5 malicious AND score >= 1.5",
+        "action_set": [
+            {"action": "revoke_session", "target": {"session_ids": ["vs_020"]},
+             "ttl_s": 900, "blast_radius": "narrow",
+             "proposed_by": ["hermes", "athena"]},
+            {"action": "throttle_source", "target": {"src_ips": ["198.51.100.31"]},
+             "ttl_s": 900, "blast_radius": "narrow",
+             "proposed_by": ["hermes", "athena", "apollo"]}
+        ]
+    };
+
+    # contain=false must do nothing at all.
+    no_contain: dict = dict(base);
+    no_contain["contain"] = False;
+    r0: dict = execute_decision(no_contain);
+    print("  contain=false   : executed=" + str(r0["executed"])
+          + " controls=" + str(len(control_surface()))
+          + "  (" + str(r0["detail"]) + ")");
+    check("a decision with contain=false applies nothing",
+          int(r0["executed"]) == 0 and len(control_surface()) == 0,
+          "executed=" + str(r0["executed"]));
+
+    # quorum_met=false likewise, even with contain=true.
+    no_quorum: dict = dict(base);
+    no_quorum["contain"] = True;
+    no_quorum["quorum_met"] = False;
+    r1: dict = execute_decision(no_quorum);
+    print("  quorum_met=false: executed=" + str(r1["executed"])
+          + " controls=" + str(len(control_surface())));
+    check("a decision without quorum applies nothing even when contain=true",
+          int(r1["executed"]) == 0 and len(control_surface()) == 0,
+          "executed=" + str(r1["executed"]));
+
+    # The real thing.
+    live: dict = dict(base);
+    live["contain"] = True;
+    r2: dict = execute_decision(live);
+    print("");
+    print("  contain=true    : " + str(r2["detail"]));
+    for raw in as_list(r2["results"]) {
+        one: dict = as_dict(raw);
+        print("      " + str(one["kind"]) + " " + str(one["action_id"])
+              + " -> " + str(one["state"]));
+    }
+    show_controls("after decision");
+    check("a containing decision applied every action in its action_set",
+          int(r2["applied"]) == 2, str(r2["applied"]) + "/2 applied");
+
+    # Redelivery of the WHOLE decision — the at-least-once case.
+    surface_1: list = control_surface();
+    r3: dict = execute_decision(live);
+    surface_2: list = control_surface();
+    idem: int = 0;
+    for raw2 in as_list(r3["results"]) {
+        one2: dict = as_dict(raw2);
+        if bool(one2["idempotent"]) {
+            idem = idem + 1;
+        }
+    }
+    print("  redelivery      : " + str(idem) + "/2 recognised as repeats, controls "
+          + str(len(surface_1)) + " -> " + str(len(surface_2)));
+    check("redelivering the whole decision is a no-op (derived action_ids are stable)",
+          idem == 2 and json.dumps(surface_1) == json.dumps(surface_2),
+          str(idem) + "/2 idempotent, surface unchanged="
+          + str(json.dumps(surface_1) == json.dumps(surface_2)));
+
+    # The gateway projection.
+    path: str = controls_path();
+    handle = open(path, "r", encoding="utf-8");
+    blob: dict = json.loads(handle.read());
+    handle.close();
+    rows: list = as_list(blob["controls"]);
+    bare: list = [];
+    canonical: list = [];
+    for raw3 in rows {
+        row: dict = as_dict(raw3);
+        if str(row["kind"]) == "throttle_source" {
+            if str(row["scope_key"]).startswith("ip:") {
+                canonical.append(str(row["scope_key"]));
+            } else {
+                bare.append(str(row["scope_key"]));
+            }
+        }
+    }
+    print("");
+    print("  gateway projection (" + path + "): " + str(len(rows)) + " row(s)");
+    print("      canonical throttle scope_keys : " + json.dumps(canonical));
+    print("      gateway-dialect aliases       : " + json.dumps(bare));
+    check("the projection carries a scope_key the gateway's throttle_rpm matches",
+          "198.51.100.31" in bare,
+          "bare-IP aliases present: " + json.dumps(bare));
+    check("...alongside the canonical key guard() uses",
+          "ip:198.51.100.31" in canonical, json.dumps(canonical));
+
+    # Teardown.
+    for raw4 in as_list(r2["results"]) {
+        one3: dict = as_dict(raw4);
+        a = find_action(str(one3["action_id"]));
+        if a is not None {
+            act: ContainmentAction = a;
+            if act.state == "active" {
+                rollback(act, "verification 9 teardown");
+            }
+        }
+    }
+    check("teardown left an empty control surface",
+          len(control_surface()) == 0, str(len(control_surface())) + " remain");
+    return {};
+}
+
+# ==========================================================================
 
 with entry:__main__ {
     print("containment executor — verification run");
@@ -967,6 +1094,7 @@ with entry:__main__ {
     verify_6_availability();
     verify_7_blast();
     verify_8_structural();
+    verify_9_decision();
 
     hr("SUMMARY");
     print("  passed : " + str(len(PASSES)));
