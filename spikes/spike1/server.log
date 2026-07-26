@@ -1,0 +1,38 @@
+⚠ Debug mode is enabled. For production, consider setting debug=false in  
+section of jac.toml
+INFO - Admin portal endpoints registered at /admin
+INFO - LLM telemetry: litellm CustomLogger registered
+INFO - LLM telemetry: byllm agent callback registered
+INFO - LLM telemetry endpoints registered: /admin/llm/telemetry/{summary,traces,traces/{id},filters}
+
+  JAC DEV SERVER v0.13.5
+
+  ➜  Local:     http://localhost:8000/
+  ➜  Network:   http://10.104.8.27:8000/
+
+  🚀 Server ready
+
+  JAC DEV SERVER v0.13.5
+
+  ➜  Local:     http://localhost:8000/
+  ➜  Network:   http://10.104.8.27:8000/
+
+  🚀 Server ready
+
+  127.0.0.1:50328 - "GET /healthz HTTP/1.1" 200
+echo_pub received ctx: {'request_id': 'r-1', 'src_ip': '1.2.3.4', 'session_id': 's-9', 'csrf_ok': True, 'client_fp': {'ua': 'curl', 'tls': 'h2'}, 'scopes': ['read', 'write'], 'attempt': 3}
+echo_pub type(ctx): <class 'dict'>
+echo_pub type(ctx['client_fp']): <class 'dict'>
+echo_pub rebuilt ReqCtx: ReqCtx(request_id='r-1', src_ip='1.2.3.4', session_id='s-9', csrf_ok=True)
+{'label': 'spike', 'n': 7, 'ctx_type': "<class 'dict'>", 'client_fp_type': "<class 'dict'>", 'client_fp': {'ua': 'curl', 'tls': 'h2'}, 'rebuilt_request_id': 'r-1', 'rebuilt_csrf_ok': True, 'ctx_echo': {'request_id': 'r-1', 'src_ip': '1.2.3.4', 'session_id': 's-9', 'csrf_ok': True, 'client_fp': {'ua': 'curl', 'tls': 'h2'}, 'scopes': ['read', 'write'], 'attempt': 3}}
+  127.0.0.1:50331 - "POST /walker/echo_pub HTTP/1.1" 200
+  127.0.0.1:50363 - "POST /walker/echo_typed HTTP/1.1" 422
+  127.0.0.1:50365 - "POST /user/register HTTP/1.1" 201
+  127.0.0.1:50397 - "POST /user/login HTTP/1.1" 200
+echo_priv received ctx: {'request_id': 'r-1', 'src_ip': '1.2.3.4', 'session_id': 's-9', 'csrf_ok': True, 'client_fp': {'ua': 'curl', 'tls': 'h2'}, 'scopes': ['read', 'write'], 'attempt': 3}
+echo_priv type(ctx): <class 'dict'>
+echo_priv type(ctx['client_fp']): <class 'dict'>
+echo_priv rebuilt ReqCtx: ReqCtx(request_id='r-1', src_ip='1.2.3.4', session_id='s-9', csrf_ok=True)
+{'label': 'spike-priv', 'ctx_type': "<class 'dict'>", 'client_fp_type': "<class 'dict'>", 'rebuilt_request_id': 'r-1', 'ctx_echo': {'request_id': 'r-1', 'src_ip': '1.2.3.4', 'session_id': 's-9', 'csrf_ok': True, 'client_fp': {'ua': 'curl', 'tls': 'h2'}, 'scopes': ['read', 'write'], 'attempt': 3}}
+  127.0.0.1:50399 - "POST /walker/echo_priv HTTP/1.1" 200
+  127.0.0.1:50401 - "POST /walker/echo_priv HTTP/1.1" 401
