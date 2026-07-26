@@ -24,3 +24,17 @@ Notes:
   otherwise shadows `gateway/app.jac`.
 - `jac check` prints a misleading "N failed" banner while exiting 0. Trust the
   exit code.
+
+## Two traps that produce false results
+
+**1. Stale compiled modules.** Jac caches to per-directory `.jac/cache/*.jir` keyed on the
+base module, so edits to a `.test.jac` annex can be **silently ignored** — a 13-test file
+reporting "Ran 8 tests" with no error. Clear before trusting any result:
+
+```bash
+find . -type d -name .jac -not -path './vendor/*' | xargs rm -rf
+```
+
+**2. Cold-cache first run.** Immediately after clearing, the first `gateway/tests/verify.sh`
+can report spurious failures (observed: 32/7) while every subsequent run is 40/0. Everything
+recompiles under a fixture timeout. Re-run once before believing a gateway failure.

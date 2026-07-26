@@ -18,7 +18,7 @@
 # Each case also asserts the trail: exactly one AuditEvent, outcome `deny`.
 
 import from tests.fixtures { world, ctx_for }
-import from tests.helpers { audit_count, only_event }
+import from tests.helpers { audit_count, only_event, only_report, data_of, items_of }
 import from app.services.projects { ReadProject, UpdateProject, DeleteProject, ListProjects }
 
 glob:pub W: dict = world();
@@ -30,7 +30,7 @@ test "an Acme member cannot READ a Globex project by its real id" {
         tenant_id="t_acme",
         project_id="pr_globex"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CROSS-TENANT READ ->", r);
     assert r["ok"] == False;
     assert r["status"] == 404;
@@ -52,8 +52,8 @@ test "the 404 for a foreign id is identical to the 404 for a fictional id" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_nope", "GET"),
         tenant_id="t_acme", project_id="pr_nope"
     ) spawn root;
-    a = real_foreign.reports[0];
-    b = never_existed.reports[0];
+    a = only_report(real_foreign);
+    b = only_report(never_existed);
     print("FOREIGN :", a);
     print("FICTION :", b);
     assert a["status"] == b["status"];
@@ -67,7 +67,7 @@ test "an Acme member cannot UPDATE a Globex project" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_globex", "PATCH"),
         tenant_id="t_acme", project_id="pr_globex", name="pwned"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CROSS-TENANT UPDATE ->", r);
     assert r["ok"] == False;
     assert r["status"] == 404;
@@ -84,7 +84,7 @@ test "an Acme OWNER cannot DELETE a Globex project -- rank does not cross" {
         ctx=ctx_for("s_owner", "/api/v1/tenants/t_acme/projects/pr_globex", "DELETE"),
         tenant_id="t_acme", project_id="pr_globex"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CROSS-TENANT DELETE (as owner) ->", r);
     assert r["ok"] == False;
     assert r["status"] == 404;
@@ -101,7 +101,7 @@ test "a Globex session addressing Acme is TENANT_MISMATCH, escalated high" {
         ctx=ctx_for("s_globex", "/api/v1/tenants/t_acme/projects", "GET"),
         tenant_id="t_acme"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CREDENTIAL CROSSING ->", r);
     assert r["ok"] == False;
     assert r["error"]["code"] == "TENANT_MISMATCH";
@@ -119,9 +119,9 @@ test "listing Acme projects never returns a Globex record" {
         ctx=ctx_for("s_owner", "/api/v1/tenants/t_acme/projects", "GET"),
         tenant_id="t_acme", limit=100
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     assert r["ok"] == True;
-    items: list = r["data"]["items"];
+    items: list = items_of(r);
     ids = [i["project_id"] for i in items];
     print("ACME PROJECTS (as owner):", ids);
     assert "pr_globex" not in ids;

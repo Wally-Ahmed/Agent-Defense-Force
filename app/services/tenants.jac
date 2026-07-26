@@ -90,7 +90,7 @@ def _membership_id_in(t: Tenant, principal_id: str) -> str {
 # GET /tenants -- authenticated, no tenant in the path -- tenant.read -- 200
 # --------------------------------------------------------------------------
 
-walker ListMyTenants {
+walker:priv ListMyTenants {
     has ctx: dict = {};
     has limit: int = 0;
     has cursor: str = "";
@@ -138,10 +138,16 @@ walker ListMyTenants {
         }
         pg = page(rows, lim, offset, "", "tenant.list", fkey, ts);
         window: list = pg["items"];
-        items: list = [
-            tenant_view(row["tenant"], row["role"], _membership_id_in(row["tenant"], principal.principal_id))
-            for row in window
-        ];
+        # Each entry of tenants_for()'s return is untyped from this module's
+        # point of view (scope.jac declares it `-> list`), so the two fields
+        # are recovered with an explicit cast before they can be passed to a
+        # str/Tenant-typed parameter.
+        items: list = [];
+        for row in window {
+            t_row = cast(Tenant, row["tenant"]);
+            role_row = cast(str, row["role"]);
+            items.append(tenant_view(t_row, role_row, _membership_id_in(t_row, principal.principal_id)));
+        }
         report ok({
             "items": items,
             "next_cursor": pg["next_cursor"],
@@ -156,7 +162,7 @@ walker ListMyTenants {
 # POST /tenants -- authenticated, tenantless -- tenant.create -- 201
 # --------------------------------------------------------------------------
 
-walker CreateTenant {
+walker:priv CreateTenant {
     has ctx: dict = {};
     has tenant_id: str = "";
     has name: str = "";
@@ -228,7 +234,7 @@ walker CreateTenant {
 # GET /tenants/{tenant_id} -- viewer -- tenant.read -- 200
 # --------------------------------------------------------------------------
 
-walker ReadTenant {
+walker:priv ReadTenant {
     has ctx: dict = {};
     has tenant_id: str = "";
 

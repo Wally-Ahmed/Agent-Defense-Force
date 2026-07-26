@@ -25,7 +25,7 @@ import re;
 import glob;
 
 import from tests.fixtures { world, ctx_for }
-import from tests.helpers { audit_count, only_event }
+import from tests.helpers { audit_count, only_event, only_report, data_of, items_of }
 import from app.services.projects { ReadProject, ListProjects, UpdateProject }
 import from app.services.sensitivity { floor_for, can_reach, SENSITIVITY_FLOOR }
 import from app.security.roles { ROLES }
@@ -42,7 +42,7 @@ test "a member is denied the canary project by ordinary authorization" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_canary", "GET"),
         tenant_id="t_acme", project_id="pr_canary"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("MEMBER -> CANARY:", r);
     assert r["ok"] == False;
     assert r["status"] == 404;
@@ -82,10 +82,10 @@ test "an admin reaches the canary project -- the floor is a floor, not a wall" {
         ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/projects/pr_canary", "GET"),
         tenant_id="t_acme", project_id="pr_canary"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("ADMIN -> CANARY:", r["ok"], r["status"]);
     assert r["ok"] == True;
-    assert r["data"]["sensitivity"] == "canary";
+    assert data_of(r)["sensitivity"] == "canary";
 }
 
 test "a member's project list contains neither the canary nor the confidential" {
@@ -93,16 +93,16 @@ test "a member's project list contains neither the canary nor the confidential" 
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects", "GET"),
         tenant_id="t_acme", limit=100
     ) spawn root;
-    r = w.reports[0];
-    items: list = r["data"]["items"];
+    r = only_report(w);
+    items: list = items_of(r);
     ids = [i["project_id"] for i in items];
-    print("MEMBER PROJECT LIST:", ids, "total_visible:", r["data"]["total_visible"]);
+    print("MEMBER PROJECT LIST:", ids, "total_visible:", data_of(r)["total_visible"]);
     assert "pr_canary" not in ids;
     assert "pr_conf" not in ids;
     assert "pr_normal" in ids;
     # It is not merely hidden from the page -- it never entered the collection,
     # so it cannot leak through the count either.
-    assert r["data"]["total_visible"] == len(ids);
+    assert data_of(r)["total_visible"] == len(ids);
 }
 
 # --------------------------------------------------------------------------
@@ -118,8 +118,8 @@ test "the canary denial is byte-identical to an ordinary confidential denial" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_conf", "GET"),
         tenant_id="t_acme", project_id="pr_conf"
     ) spawn root;
-    a = canary.reports[0];
-    b = conf.reports[0];
+    a = only_report(canary);
+    b = only_report(conf);
     print("CANARY      :", a);
     print("CONFIDENTIAL:", b);
     assert a == b;
@@ -130,7 +130,7 @@ test "a member cannot write a canary project either, by the same floor" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_canary", "PATCH"),
         tenant_id="t_acme", project_id="pr_canary", name="touched"
     ) spawn root;
-    r = up.reports[0];
+    r = only_report(up);
     print("MEMBER UPDATE -> CANARY:", r);
     assert r["ok"] == False;
     assert r["error"]["code"] == "NOT_FOUND";
@@ -200,9 +200,9 @@ test "no AUTHORIZATION path under app/ branches on the value \"canary\"" {
             if "canary" not in line {
                 continue;
             }
-            mentions.append(path.split("/app/")[-1] + ":" + str(lineno) + "  " + stripped);
+            mentions.append(str(path.split("/app/")[-1]) + ":" + str(lineno) + "  " + str(stripped));
             if re.search(CANARY_BRANCH_RE, line) is not None {
-                where = path.split("/app/")[-1] + ":" + str(lineno) + "  " + stripped;
+                where: str = str(path.split("/app/")[-1]) + ":" + str(lineno) + "  " + str(stripped);
                 if path.split("/app/")[-1] == SEVERITY_RULE_FILE {
                     exempt.append(where);
                 } else {

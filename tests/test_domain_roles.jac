@@ -13,7 +13,7 @@
 # through one expression and no branch.
 
 import from tests.fixtures { world, ctx_for }
-import from tests.helpers { audit_count, only_event }
+import from tests.helpers { audit_count, only_event, only_report, data_of, items_of, details_of }
 import from app.services.projects { CreateProject, DeleteProject, ListProjects, ReadProject }
 import from app.services.sensitivity { effective_required }
 
@@ -29,7 +29,7 @@ test "a VIEWER cannot create a project" {
         ctx=ctx_for("s_viewer", "/api/v1/tenants/t_acme/projects", "POST"),
         tenant_id="t_acme", key="VIEW", name="Viewer's project"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("VIEWER CREATE ->", r);
     assert r["ok"] == False;
     assert r["status"] == 403;
@@ -47,8 +47,8 @@ test "a VIEWER can read and list -- the ladder is a ladder, not a wall" {
         ctx=ctx_for("s_viewer", "/api/v1/tenants/t_acme/projects", "GET"),
         tenant_id="t_acme"
     ) spawn root;
-    r = w.reports[0];
-    print("VIEWER LIST ->", r["ok"], r["status"], "items:", len(r["data"]["items"]));
+    r = only_report(w);
+    print("VIEWER LIST ->", r["ok"], r["status"], "items:", len(items_of(r)));
     assert r["ok"] == True;
     assert r["status"] == 200;
 }
@@ -58,11 +58,11 @@ test "a MEMBER can create an ordinary project" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects", "POST"),
         tenant_id="t_acme", key="MEMOK", name="Member's project"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("MEMBER CREATE (normal) ->", r["ok"], r["status"]);
     assert r["ok"] == True;
     assert r["status"] == 201;
-    assert r["data"]["sensitivity"] == "normal";
+    assert data_of(r)["sensitivity"] == "normal";
 }
 
 test "a MEMBER cannot DELETE a project -- delete is admin-only" {
@@ -71,7 +71,7 @@ test "a MEMBER cannot DELETE a project -- delete is admin-only" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_normal", "DELETE"),
         tenant_id="t_acme", project_id="pr_normal"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("MEMBER DELETE ->", r);
     assert r["ok"] == False;
     assert r["status"] == 403;
@@ -85,7 +85,7 @@ test "a MEMBER cannot DELETE a project -- delete is admin-only" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/pr_normal", "GET"),
         tenant_id="t_acme", project_id="pr_normal"
     ) spawn root;
-    assert check.reports[0]["ok"] == True;
+    assert only_report(check)["ok"] == True;
 }
 
 # --------------------------------------------------------------------------
@@ -109,7 +109,7 @@ test "a MEMBER cannot create a CONFIDENTIAL project" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects", "POST"),
         tenant_id="t_acme", key="MEMCONF", name="Sneaky", sensitivity="confidential"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("MEMBER CREATE (confidential) ->", r);
     assert r["ok"] == False;
     assert r["status"] == 403;
@@ -132,11 +132,11 @@ test "an ADMIN can create a confidential project -- same expression, higher rank
         ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/projects", "POST"),
         tenant_id="t_acme", key="ADMCONF", name="Board notes", sensitivity="confidential"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("ADMIN CREATE (confidential) ->", r["ok"], r["status"]);
     assert r["ok"] == True;
     assert r["status"] == 201;
-    assert r["data"]["sensitivity"] == "confidential";
+    assert data_of(r)["sensitivity"] == "confidential";
 }
 
 # --------------------------------------------------------------------------
@@ -148,12 +148,12 @@ test "a bad project key is VALIDATION_FAILED with per-field detail" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects", "POST"),
         tenant_id="t_acme", key="not a key", name="x"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("BAD KEY ->", r);
     assert r["ok"] == False;
     assert r["status"] == 422;
     assert r["error"]["code"] == "VALIDATION_FAILED";
-    assert len(r["error"]["details"]) > 0;
+    assert len(details_of(r)) > 0;
 }
 
 test "an over-large limit is REJECTED, not clamped" {
@@ -161,7 +161,7 @@ test "an over-large limit is REJECTED, not clamped" {
         ctx=ctx_for("s_viewer", "/api/v1/tenants/t_acme/projects", "GET"),
         tenant_id="t_acme", limit=10000
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("limit=10000 ->", r);
     assert r["ok"] == False;
     assert r["status"] == 422;
@@ -173,7 +173,7 @@ test "a forged cursor is rejected and reveals nothing about why" {
         ctx=ctx_for("s_viewer", "/api/v1/tenants/t_acme/projects", "GET"),
         tenant_id="t_acme", cursor="eyJvIjogMH0.deadbeefdeadbeefdeadbeefdeadbeef"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("FORGED CURSOR ->", r);
     assert r["ok"] == False;
     assert r["error"]["code"] == "VALIDATION_FAILED";

@@ -14,7 +14,7 @@
 # be invisible in it. Both show up here as a failing count.
 
 import from tests.fixtures { world, ctx_for }
-import from tests.helpers { audit_count, only_event }
+import from tests.helpers { audit_count, only_event, only_report, data_of, items_of }
 import from app.services.projects { CreateProject, ListProjects, ReadProject }
 import from app.services.tasks { CreateTask, ListTasks, ReadTask }
 import from app.services.comments { CreateComment, ListComments, ReadComment }
@@ -30,13 +30,13 @@ test "step 1 -- a member creates a project, one project.create event" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects", "POST", "req_hp1"),
         tenant_id="t_acme", key="HAPPY", name="Happy path", description="built by a member"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CREATE PROJECT ->", r);
     assert r["ok"] == True;
     assert r["status"] == 201;
-    assert r["data"]["tenant_id"] == "t_acme";
-    assert r["data"]["owner_user_id"] == "u_member";
-    MADE["project_id"] = r["data"]["project_id"];
+    assert data_of(r)["tenant_id"] == "t_acme";
+    assert data_of(r)["owner_user_id"] == "u_member";
+    MADE["project_id"] = data_of(r)["project_id"];
 
     ev = only_event(mark);
     print("  audit:", ev);
@@ -53,12 +53,12 @@ test "step 2 -- the same member creates a task on it, one task.create event" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/x/tasks", "POST", "req_hp2"),
         tenant_id="t_acme", project_id=MADE["project_id"], title="Write the tests"
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CREATE TASK ->", r);
     assert r["ok"] == True;
     assert r["status"] == 201;
-    assert r["data"]["project_id"] == MADE["project_id"];
-    MADE["task_id"] = r["data"]["task_id"];
+    assert data_of(r)["project_id"] == MADE["project_id"];
+    MADE["task_id"] = data_of(r)["task_id"];
 
     ev = only_event(mark);
     print("  audit:", ev);
@@ -76,13 +76,13 @@ test "step 3 -- and a comment on that task, one comment.create event" {
         task_id=MADE["task_id"],
         body="First."
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     print("CREATE COMMENT ->", r);
     assert r["ok"] == True;
     assert r["status"] == 201;
     # Authorship comes from the authenticated principal, never from the body.
-    assert r["data"]["author_user_id"] == "u_member";
-    MADE["comment_id"] = r["data"]["comment_id"];
+    assert data_of(r)["author_user_id"] == "u_member";
+    MADE["comment_id"] = data_of(r)["comment_id"];
 
     ev = only_event(mark);
     print("  audit:", ev);
@@ -96,9 +96,9 @@ test "step 4 -- the project lists back, one project.list event" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects", "GET", "req_hp4"),
         tenant_id="t_acme", limit=100
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     assert r["ok"] == True;
-    ids = [i["project_id"] for i in r["data"]["items"]];
+    ids = [i["project_id"] for i in items_of(r)];
     print("LIST PROJECTS ->", ids);
     assert MADE["project_id"] in ids;
 
@@ -117,9 +117,9 @@ test "step 5 -- the task lists back, one task.list event" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/x/tasks", "GET", "req_hp5"),
         tenant_id="t_acme", project_id=MADE["project_id"], limit=100
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     assert r["ok"] == True;
-    ids = [i["task_id"] for i in r["data"]["items"]];
+    ids = [i["task_id"] for i in items_of(r)];
     print("LIST TASKS ->", ids);
     assert MADE["task_id"] in ids;
 
@@ -135,9 +135,9 @@ test "step 6 -- the comment lists back, one comment.list event" {
         ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/.../comments", "GET", "req_hp6"),
         tenant_id="t_acme", project_id=MADE["project_id"], task_id=MADE["task_id"], limit=100
     ) spawn root;
-    r = w.reports[0];
+    r = only_report(w);
     assert r["ok"] == True;
-    ids = [i["comment_id"] for i in r["data"]["items"]];
+    ids = [i["comment_id"] for i in items_of(r)];
     print("LIST COMMENTS ->", ids);
     assert MADE["comment_id"] in ids;
 
@@ -153,7 +153,7 @@ test "step 7 -- each record reads back individually, one event each" {
         ctx=ctx_for("s_member", "/p", "GET", "req_hp7a"),
         tenant_id="t_acme", project_id=MADE["project_id"]
     ) spawn root;
-    assert pr.reports[0]["ok"] == True;
+    assert only_report(pr)["ok"] == True;
     ev = only_event(mark);
     assert ev["action"] == "project.read";
     assert ev["outcome"] == "allow";
@@ -163,7 +163,7 @@ test "step 7 -- each record reads back individually, one event each" {
         ctx=ctx_for("s_member", "/t", "GET", "req_hp7b"),
         tenant_id="t_acme", project_id=MADE["project_id"], task_id=MADE["task_id"]
     ) spawn root;
-    assert tk.reports[0]["ok"] == True;
+    assert only_report(tk)["ok"] == True;
     ev2 = only_event(mark2);
     assert ev2["action"] == "task.read";
     assert ev2["outcome"] == "allow";
@@ -174,7 +174,7 @@ test "step 7 -- each record reads back individually, one event each" {
         tenant_id="t_acme", project_id=MADE["project_id"],
         task_id=MADE["task_id"], comment_id=MADE["comment_id"]
     ) spawn root;
-    assert cm.reports[0]["ok"] == True;
+    assert only_report(cm)["ok"] == True;
     ev3 = only_event(mark3);
     assert ev3["action"] == "comment.read";
     assert ev3["outcome"] == "allow";

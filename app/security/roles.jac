@@ -109,21 +109,54 @@ glob:pub READ_ACTIONS: list = [
     "auth.session_expired"
 ];
 
-# Operations that ALWAYS require a recent password, containment control or not.
+# Operations that require a recent password, containment control or not.
 # Mandated by contracts/req_ctx_contract.jac (the `session_auth_at_ms` note):
-# these four are the ones marked † in contracts/app_api.openapi.yaml, and they
-# demand `now_ms - session_auth_at_ms <= 900000` or a REAUTH_REQUIRED denial.
+# these are the five marked `x-step-up-required: true` in
+# contracts/app_api.openapi.yaml, and they demand
+# `now_ms - session_auth_at_ms <= 900000` or a REAUTH_REQUIRED denial.
 #
 # The common thread is that each one is irreversible or exfiltrating: a stolen
 # live session should be able to browse, but it should NOT be able to hand
 # itself a role, delete a colleague's access, or walk out with the dataset
 # without the human at the keyboard proving they are still there.
-glob:pub STEPUP_ACTIONS: list = [
-    "member.role_change",
-    "member.remove",
-    "export.request",
-    "export.download"
-];
+#
+# WHICH PRINCIPALS a requirement binds is part of the requirement, so it is a
+# column in this table rather than a condition somewhere in a walker:
+#
+#   STEPUP_ALL          -- every principal. An API token can never present a
+#                          password, so for these it is an outright refusal:
+#                          there is no legitimate service-account path to an
+#                          export or a role change at all.
+#   STEPUP_USER_SESSION -- user-session principals ONLY. The contract's
+#                          x-required-role for integration.call reads
+#                          "service account: member + scope integration:call;
+#                          user session: admin + step-up" -- two distinct
+#                          principals with two distinct requirements. A service
+#                          account has no interactive session to re-authenticate,
+#                          so it is authorized by token scope + membership (the
+#                          scope narrowing in authz.jac), and demanding step-up
+#                          of it would deny every legitimate integration call.
+glob:pub STEPUP_ALL: str = "all";
+glob:pub STEPUP_USER_SESSION: str = "user_session";
+
+glob:pub STEPUP_ACTIONS: dict = {
+    "member.role_change": STEPUP_ALL,
+    "member.remove": STEPUP_ALL,
+    "export.request": STEPUP_ALL,
+    "export.download": STEPUP_ALL,
+    "integration.call": STEPUP_USER_SESSION
+};
+
+# The ONLY auth methods a STEPUP_USER_SESSION requirement does not bind: the
+# non-interactive ones, where there is no human at a keyboard to re-authenticate.
+#
+# The test is deliberately written as membership of THIS list rather than as
+# "is it a user session", because the two are not the same under an unexpected
+# value. An empty, missing, unknown or misspelled auth_method is not on this
+# list and therefore steps up -- the fail-CLOSED direction. Were the check
+# inverted ("step up only if auth_method is session-ish"), any value the app did
+# not recognise would buy a silent exemption.
+glob:pub NON_INTERACTIVE_AUTH_METHODS: list = ["api_token"];
 
 # Actions that must still work while a force_reauth control is active --
 # otherwise the control locks the user out of the very flow that clears it.
@@ -166,9 +199,27 @@ def:pub survives_reauth(action: str) -> bool {
     return action in REAUTH_ALLOWED_ACTIONS;
 }
 
-"""True when the action demands a recent password regardless of any control."""
-def:pub requires_stepup(action: str) -> bool {
-    return action in STEPUP_ACTIONS;
+"""True when the action demands a recent password regardless of any control.
+
+`auth_method` is the method the caller was ACTUALLY authenticated by, as
+determined by authz.guard() from the credential it verified -- never a value the
+client supplied. It defaults to "session", the strict reading: a caller that
+does not say how it authenticated gets the user-session requirement, not the
+service-account carve-out.
+
+The carve-out is narrow by construction. It applies only to actions the table
+marks STEPUP_USER_SESSION, and only to the auth methods in
+NON_INTERACTIVE_AUTH_METHODS. Every other combination -- including an unknown
+scope value and an unknown auth_method -- returns True and steps up."""
+def:pub requires_stepup(action: str, auth_method: str = "session") -> bool {
+    scope = STEPUP_ACTIONS.get(action, "");
+    if scope == "" {
+        return False;
+    }
+    if scope == STEPUP_USER_SESSION and auth_method in NON_INTERACTIVE_AUTH_METHODS {
+        return False;
+    }
+    return True;
 }
 
 """Actions in ACTIONS that have no ACTION_MIN_ROLE entry. Must always be empty:
@@ -192,7 +243,19 @@ fires, and the step-up requirement silently evaporates with no error anywhere.
 That is the one failure mode this control cannot tolerate, so it is checked at
 import time rather than trusted."""
 def:pub stepup_strays() -> list {
-    return [a for a in STEPUP_ACTIONS if a not in ACTIONS];
+    return [a for a in STEPUP_ACTIONS.keys() if a not in ACTIONS];
+}
+
+"""Entries in STEPUP_ACTIONS whose scope column is not one of the two known
+scopes -- checked at import time for the same reason as stepup_strays().
+
+A bad scope value does not fail open (requires_stepup() returns True for
+anything it does not recognise), but it silently converts a user-session-only
+requirement into an all-principals one, which would deny every service-account
+integration call in production. Loud at import beats mysterious at runtime."""
+def:pub stepup_scope_strays() -> list {
+    known = [STEPUP_ALL, STEPUP_USER_SESSION];
+    return [a for a in STEPUP_ACTIONS.keys() if STEPUP_ACTIONS[a] not in known];
 }
 
 """Raise unless the policy table covers exactly the frozen action vocabulary."""
@@ -213,6 +276,14 @@ def:pub assert_policy_complete() -> bool {
             + "vocabulary: " + str(su_strays)
             + ". A typo here disables a step-up requirement SILENTLY, so it "
             + "stops the application instead."
+        );
+    }
+    scope_strays = stepup_scope_strays();
+    if len(scope_strays) > 0 {
+        raise RuntimeError(
+            "FATAL: STEPUP_ACTIONS gives an unknown scope to: "
+            + str(scope_strays)
+            + ". The scope column must be STEPUP_ALL or STEPUP_USER_SESSION."
         );
     }
     return True;

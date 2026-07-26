@@ -308,13 +308,23 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     }
     # Step-up authentication. Demanded in two independent circumstances:
     #
-    #   (a) ALWAYS, for the four irreversible / exfiltrating operations listed
-    #       in roles.STEPUP_ACTIONS. contracts/req_ctx_contract.jac mandates
+    #   (a) BY OPERATION, for the irreversible / exfiltrating ones listed in
+    #       roles.STEPUP_ACTIONS. contracts/req_ctx_contract.jac mandates
     #       `now_ms - session_auth_at_ms <= 900000` for these. A stolen live
     #       session may browse; it may not grant itself a role, delete a
     #       colleague, or walk out with the dataset without the human at the
     #       keyboard proving they are still there.
+    #
+    #       That table also says WHICH principals each requirement binds, and
+    #       `base["auth_method"]` -- established above from the credential this
+    #       function itself verified, never from anything the client sent -- is
+    #       what selects between them. `integration.call` is the one scoped to
+    #       user sessions: a service account presenting an API token has no
+    #       interactive session to re-authenticate and is authorized by the
+    #       `integration:call` scope narrowing above plus membership instead.
     #   (b) ON DEMAND, when the responder has written a `force_reauth` control.
+    #       This one binds EVERY principal, API tokens included -- the carve-out
+    #       in (a) is per-operation and does not reach it.
     #
     # The freshness clock is `session_auth_at_ms` from the VERIFIED ctx -- the
     # gateway stamps it from the session record and it is covered by the HMAC,
@@ -326,10 +336,16 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
         if actor_tenant_id != "" {
             reauth_keys.append(key_tenant(actor_tenant_id));
         }
-        demanded = requires_stepup(action) or has_control("force_reauth", reauth_keys, now);
+        demanded = (
+            requires_stepup(action, base["auth_method"])
+            or has_control("force_reauth", reauth_keys, now)
+        );
         if demanded {
             # An API token can never present a password, so it can never
             # satisfy a step-up -- it is refused without consulting the clock.
+            # Reaching here with a token means the demand came from an
+            # all-principals action or from a force_reauth control, both of
+            # which bind it.
             if base["auth_method"] != "session" {
                 return _decide(base, False, "REAUTH_REQUIRED", principal=actor);
             }
