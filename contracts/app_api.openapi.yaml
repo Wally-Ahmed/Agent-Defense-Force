@@ -490,7 +490,7 @@ paths:
         On failure the response is `401` with `error.code = "NO_SESSION"` and the fixed
         message `Invalid email or password.` — byte-identical whether the account does not
         exist, the password is wrong, or the account is suspended. The gateway runs an
-        argon2id verification against a dummy hash for unknown emails so that response
+        bcrypt verification against a dummy hash for unknown emails so that response
         timing is uniform. This is the endpoint the password-spraying step of the attack
         scenario targets; it is an oracle for nothing.
 
@@ -507,7 +507,7 @@ paths:
       x-authz:
         authentication: none
         server_side_check: >-
-          The walker verifies the argon2id hash in constant time and, on success, mints an
+          The walker verifies the bcrypt hash in constant time and, on success, mints an
           opaque session bound to the user. It grants no tenant access of any kind; every
           tenant-scoped endpoint re-derives the Membership independently.
       x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, CSRF_INVALID, VALIDATION_FAILED]
@@ -626,7 +626,7 @@ paths:
         authentication: required
         server_side_check: >-
           The walker verifies the password against the authenticated principal's own
-          argon2id hash. It cannot be pointed at another principal, and success elevates
+          bcrypt hash (cost 12). It cannot be pointed at another principal, and success elevates
           freshness only — it grants no role and no tenant access.
       x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, CSRF_INVALID, SUSPENDED, VALIDATION_FAILED]
       requestBody:
@@ -1945,7 +1945,7 @@ components:
       description: >-
         Service-account API token, `nwp_` followed by 43 base62 characters. Bound to exactly
         one tenant and one service-account Membership, and carries an explicit scope set.
-        Stored as an argon2id hash. Accepted only on the `Authorization` header, never in a
+        Stored as an bcrypt hash (cost 12). Accepted only on the `Authorization` header, never in a
         query string, and never on the `/auth/*` endpoints. This is the credential class the
         compromised synthetic identity in the attack fixture belongs to; it is an ordinary
         token with ordinary, minimal privileges.
@@ -2380,7 +2380,7 @@ components:
           type: string
           minLength: 12
           maxLength: 200
-          description: Checked against a breached-password list. Hashed with argon2id. Never logged or echoed.
+          description: Checked against a breached-password list. Hashed with bcrypt (cost 12). Never logged or echoed.
           writeOnly: true
         display_name: {type: string, minLength: 1, maxLength: 80}
     UserSelf:
