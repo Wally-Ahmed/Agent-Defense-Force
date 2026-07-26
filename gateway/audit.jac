@@ -19,7 +19,7 @@ import os;
 import json;
 import time;
 import uuid;
-import threading;
+import from threading { Lock }
 import from typing { Any }
 
 # The 38 AuditEvent fields, in the frozen order from
@@ -44,7 +44,7 @@ glob:pub SCHEMA_VERSION: str = "1.0.0";
 glob:pub GATEWAY_ACTIONS: list = ["auth.login_failed"];
 glob:pub GATEWAY_REASONS: list = ["RATE_LIMITED", "CSRF_INVALID"];
 
-glob AUDIT_LOCK: Any = threading.Lock();
+glob AUDIT_LOCK: Lock = Lock();
 
 """ISO-8601 UTC with microseconds and a trailing Z, matching the golden fixture."""
 def iso_utc(ts_ms: int) -> str {

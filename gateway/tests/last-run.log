@@ -1,0 +1,125 @@
+=== booting upstream stub + gateway ===
+  up: gateway :8080  upstream :8000
+
+=== 1. Security headers on a real response ===
+  strict-transport-security: max-age=31536000; includeSubDomains
+  x-content-type-options: nosniff
+  referrer-policy: no-referrer
+  x-frame-options: DENY
+  permissions-policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  cross-origin-opener-policy: same-origin
+  cache-control: no-store
+  content-security-policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'
+  x-request-id: 04d544207e474efb
+  PASS  header strict-transport-security present
+  PASS  header content-security-policy present
+  PASS  header x-content-type-options present
+  PASS  header referrer-policy present
+  PASS  header x-frame-options present
+  PASS  header permissions-policy present
+
+=== 2. CORS allowlist (overrides jac-scale's allow_origins=['*']) ===
+  -- allowed origin --
+  access-control-allow-origin: http://allowed.test
+  access-control-allow-credentials: true
+  PASS  allowed origin echoed (http://allowed.test)
+  -- disallowed origin --
+  PASS  no ACAO for disallowed origin (0)
+  -- wildcard never emitted --
+  PASS  no wildcard ACAO (0)
+  -- preflight from disallowed origin --
+  PASS  preflight rejected (403)
+  PASS  preflight allowed (204)
+  -- cross-origin POST from disallowed origin --
+  PASS  cross-origin POST rejected (403)
+
+=== 3. Non-GET without a valid CSRF token ===
+  {"error":{"code":"CSRF_INVALID","message":"CSRF validation failed.","request_id":"77a8ea6ee1e0416d"}}
+  PASS  no CSRF token -> 403 (403)
+  PASS  deny code (CSRF_INVALID)
+  PASS  forged CSRF token -> 403 (403)
+
+=== 4. Rate limiting trips at the configured threshold ===
+  pre-session CSRF cookie issued: IpOE8h3uMzZ-...
+  attempt 1 -> 200
+  attempt 2 -> 200
+  attempt 3 -> 200
+  attempt 4 -> 429
+  PASS  4th register (limit 3) -> 429 (429)
+  x-ratelimit-limit: 3
+  x-ratelimit-remaining: 0
+  x-ratelimit-reset: 1785103752
+  retry-after: 1200
+  {"error":{"code":"RATE_LIMITED","message":"Too many requests.","request_id":"9c9ebdce1ab4410a","retry_after_s":1200}}
+  PASS  429 body carries RATE_LIMITED
+  PASS  audit sink recorded RATE_LIMITED (3 events)
+
+=== 4b. Login throttle: exponential backoff after 5 failures ===
+  failed login 1 -> 401
+  failed login 2 -> 401
+  failed login 3 -> 401
+  failed login 4 -> 401
+  failed login 5 -> 401
+  failed login 6 -> 429
+  PASS  6th attempt throttled (429)
+  {"error":{"code":"RATE_LIMITED","message":"Too many requests.","request_id":"81421f91ac264191","retry_after_s":2}}
+  PASS  gateway emitted auth.login_failed x6
+  PASS  login_failed carries actor_email
+  PASS  no credential in audit sink
+  PASS  no cookie value in gateway log
+
+=== 4c. Containment Control node narrows the limit at the gateway ===
+  wrote throttle_source control: 127.0.0.1 -> 2 req/min (baseline for reads is 1200/60s)
+  contained read 1 -> 200
+  contained read 2 -> 200
+  contained read 3 -> 429
+  contained read 4 -> 429
+  PASS  containment throttle trips (baseline would allow) (429)
+
+=== 5. Client-supplied ctx is STRIPPED and replaced ===
+  upstream saw ctx:
+    {"request_id": "1bce01bc42424aa6", "src_ip": "127.0.0.1", "src_asn": "", "user_agent_hash": "8f42af6f304383bb", "client_fp": "0aa208b1761f32a1", "session_id": "", "token_id": "", "service": "web", "route": "/tenants/{tenant_id}/projects", "http_method": "POST", "csrf_ok": true, "received_at_ms": 1785102559070, "sig_alg": "HMAC-SHA256", "issued_at_ms": 1785102559070, "sig": "20ff4ec4f3d5aeadf3f3f8e
+  PASS  attacker value 'ATTACKER' stripped
+  PASS  attacker value '10.6.6.6' stripped
+  PASS  attacker value 'AS666' stripped
+  PASS  attacker value 'sess_victim' stripped
+  PASS  attacker value 'tok_victim' stripped
+  PASS  attacker value '/pwn' stripped
+  PASS  attacker value '"sig":"forged"' stripped
+  PASS  upstream verified the gateway's own signature
+  PASS  src_ip is the OBSERVED peer, not the claimed one
+  PASS  gateway logged the boundary probe
+
+=== 6. Forged ctx POSTed DIRECTLY to the upstream, bypassing the gateway ===
+  -- fully forged ctx --
+  {"status":401,"reports":[{"error":{"code":"CTX_UNVERIFIED","message":"Unauthenticated.","request_id":""}}]}
+  PASS  forged sig -> 401 (401)
+  -- no ctx at all --
+  PASS  missing ctx -> 401 (401)
+  -- csrf_ok flipped on an otherwise-valid ctx (replay/tamper) --
+  PASS  tampered session_id on a real signed ctx -> 401 (401)
+  (unmodified captured ctx replayed within 30s -> 200; expected 200 until it ages out)
+  upstream deny log:
+    [upstream] DENY CTX_UNVERIFIED walker=CreateProject observed_src_ip=127.0.0.1 detail=bad_sig
+    [upstream] DENY CTX_UNVERIFIED walker=CreateProject observed_src_ip=127.0.0.1 detail=ctx_not_object
+    [upstream] DENY CTX_UNVERIFIED walker=CreateProject observed_src_ip=127.0.0.1 detail=bad_sig
+
+=== 7. Refuses to start without APP_CTX_SIGNING_KEY ===
+  FATAL: required environment variable APP_CTX_SIGNING_KEY is not set. The gateway refuses to start without it. There is no default key. Generate one with:  export APP_CTX_SIGNING_KEY=$(openssl rand -hex 32)
+  The gateway will not start with a missing or weak secret, and there is no default key. Required: APP_CTX_SIGNING_KEY, APP_SESSION_SECRET, APP_CSRF_SECRET, APP_JWT_SIGNING_KEY
+  EXIT=2
+  PASS  refuses to start, loudly
+  PASS  exit code 2
+  PASS  nothing listening on 8099 (000)
+
+=== audit sink (/Users/wally/Documents/GitHub/JacHacksSF-2026/var/gateway-test/audit.jsonl) ===
+        14 events; actions/reasons seen:
+    auth.login_failed        NO_SESSION       x5
+    auth.login_failed        RATE_LIMITED     x1
+    auth.register            RATE_LIMITED     x3
+    tenant.create            CSRF_INVALID     x3
+    tenant.read              RATE_LIMITED     x2
+    all rows have 38 fields: True
+    per-session seq starts at 1 and is monotonic: True
+
+=== 40 passed, 0 failed ===

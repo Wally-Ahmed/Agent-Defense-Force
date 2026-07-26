@@ -22,7 +22,7 @@ import os;
 import json;
 import math;
 import time;
-import threading;
+import from threading { Lock }
 import from typing { Any }
 import from datetime { datetime, timezone }
 import from config {
@@ -30,7 +30,7 @@ import from config {
     LOGIN_BACKOFF_MAX_S, LOGIN_FAIL_WINDOW_S
 }
 
-glob POLICY_LOCK: Any = threading.Lock();
+glob POLICY_LOCK: Lock = Lock();
 
 """Parse an ISO-8601 timestamp to epoch millis. Returns 0 when unparseable."""
 def iso_to_ms(value: str) -> int {
@@ -242,13 +242,13 @@ obj RateLimiter {
                 retry_after_s=0, reset_epoch_s=reset_s, scope=scope
             );
         }
-        wait = int(math.ceil((1.0 - b.tokens) / b.rate));
-        if wait < 1 {
-            wait = 1;
+        wait_s = int(math.ceil((1.0 - b.tokens) / b.rate));
+        if wait_s < 1 {
+            wait_s = 1;
         }
         return LimitResult(
             allowed=False, limit=limit, remaining=0,
-            retry_after_s=wait, reset_epoch_s=int((now_ms / 1000) + wait), scope=scope
+            retry_after_s=wait_s, reset_epoch_s=int((now_ms / 1000) + wait_s), scope=scope
         );
     }
 

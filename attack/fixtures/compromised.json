@@ -1,0 +1,30 @@
+{
+  "_fixture": "This is CONTROLLED FIXTURE DATA for an authorized security demo. It is NOT a backdoor and NOT a real credential.",
+
+  "identity": {
+    "email": "svc_ingest@northwind.test",
+    "principal_id": "u_ing_7742",
+    "kind": "service_account",
+    "tenant": "t_acme",
+    "role": "member",
+    "membership_id": "mem_ac_ing_7742",
+    "description": "An ordinary low-privilege ingest service account with a normal Membership (role=member) in tenant t_acme. It has exactly the access any member has: it can read/list/search normal-sensitivity projects, tasks and comments in t_acme and create normal projects/tasks/comments there. Nothing more."
+  },
+
+  "credential": {
+    "type": "api_token",
+    "scheme": "Authorization: Bearer",
+    "token": "nwp_fixture_svcingest_ac7742_0ba9d7c1f4e2h6",
+    "token_id": "tok_a17f93c25e6b04d8",
+    "scopes": ["projects:read", "tasks:read", "comments:read", "search:read"],
+    "not_scoped_for": ["integration:call", "export:request", "member:admin"],
+    "minting": "Minted OFFLINE by attack/reset.py from this fixture seed and bcrypt-hashed (cost 12) into the application's service-account table during seeding, exactly as the operator would provision any service token. NO application endpoint issues this token to a caller; there is no /auth/* path that returns it. It is a plain bearer credential that the reset step installs. This mirrors the real-world scenario where a service token leaks OUTSIDE the app (e.g. from a compromised CI runner) and the app itself was never breached to obtain it.",
+    "validity": "The literal string above is synthetic and only 'works' against a loopback sandbox that reset.py has seeded with its hash. It authenticates to nothing else. It is not a real Northwind/production credential and contains no real secret material."
+  },
+
+  "provenance": "Obtained OUTSIDE the application. In the scenario narrative the attacker exfiltrated this service token from a compromised build agent. The application has no vulnerability that discloses it; per the frozen contract there is no admin bypass, debug endpoint, hidden route, or header/param that relaxes authorization. The compromise is entirely in the fact that the attacker holds a valid low-privilege token, plus the malicious PATTERN of how it is used.",
+
+  "reaches": "Exactly what a member of t_acme may reach: normal-sensitivity projects/tasks/comments/search within t_acme. It is denied everything else by ORDINARY authorization: admin-only operations -> 403 INSUFFICIENT_ROLE; other tenants -> 403 TENANT_MISMATCH; confidential/canary records -> 404 NOT_FOUND (unreachable by tenant-subtree traversal within its sensitivity ceiling); the admin-gated export download -> 403 INSUFFICIENT_ROLE.",
+
+  "canary_note": "p_ac_999 (project), tk_ac_9999 (task) and ex_ac_canary_01 (export) are ORDINARY records that this member legitimately cannot read. The application contains no branch on sensitivity=='canary', emits no special event for it, and alters no response for it. The member is denied them by the SAME authorization code path (and with the same 404/403 outcome) as any confidential record. The 'canary' label exists only so the external monitor knows which record was touched; deleting the enum value would change zero authorization outcomes."
+}

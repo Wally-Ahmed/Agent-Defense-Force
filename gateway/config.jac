@@ -166,46 +166,54 @@ glob:pub LOGIN_BACKOFF_MAX_S: int = 900;
 glob:pub LOGIN_FAIL_WINDOW_S: int = 900;
 
 # ---------------------------------------------------------------------------
-# The public route table. (method, path template, walker, route_class,
-# mutating, step_up). Path templates are relative to PATH_PREFIX.
-# Anything not on this table 404s at the gateway and never reaches the upstream.
+# The public route table, transcribed from the openapi `paths:` block and
+# `x-northwind-mapping`. Columns:
+#   0 method  1 path template  2 walker  3 route_class  4 mutating  5 step_up
+#   6 audit_action
+# Path templates are relative to PATH_PREFIX. Anything not on this table 404s at
+# the gateway and never reaches the upstream — the upstream's walker surface is
+# never exposed by path pass-through.
 # ---------------------------------------------------------------------------
 
 glob:pub ROUTES: list = [
-    ["POST",   "/auth/register",                                        "RegisterUser",     "auth_register",   True,  False],
-    ["POST",   "/auth/login",                                           "LoginUser",        "auth_login",      True,  False],
-    ["POST",   "/auth/logout",                                          "LogoutSession",    "auth",            True,  False],
-    ["POST",   "/auth/refresh",                                         "RefreshSession",   "auth",            True,  False],
-    ["POST",   "/auth/reauth",                                          "ReauthSession",    "auth",            True,  False],
-    ["GET",    "/auth/session",                                         "GetSession",       "read",            False, False],
-    ["GET",    "/tenants",                                              "ListMyTenants",    "read",            False, False],
-    ["POST",   "/tenants",                                              "CreateTenant",     "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}",                                  "ReadTenant",       "read",            False, False],
-    ["GET",    "/tenants/{tenant_id}/members",                          "ListMembers",      "read",            False, False],
-    ["POST",   "/tenants/{tenant_id}/members/invites",                  "InviteMember",     "write",           True,  False],
-    ["POST",   "/tenants/{tenant_id}/invites/accept",                   "AcceptInvite",     "write",           True,  False],
-    ["PATCH",  "/tenants/{tenant_id}/members/{membership_id}",          "ChangeMemberRole", "write",           True,  True],
-    ["DELETE", "/tenants/{tenant_id}/members/{membership_id}",          "RemoveMember",     "write",           True,  True],
-    ["GET",    "/tenants/{tenant_id}/projects",                         "ListProjects",     "read",            False, False],
-    ["POST",   "/tenants/{tenant_id}/projects",                         "CreateProject",    "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}",            "ReadProject",      "read",            False, False],
-    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}",            "UpdateProject",    "write",           True,  False],
-    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}",            "DeleteProject",    "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks",      "ListTasks",        "read",            False, False],
-    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks",      "CreateTask",       "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}/tasks/{task_id}",                  "ReadTask",         "read",            False, False],
-    ["PATCH",  "/tenants/{tenant_id}/tasks/{task_id}",                  "UpdateTask",       "write",           True,  False],
-    ["DELETE", "/tenants/{tenant_id}/tasks/{task_id}",                  "DeleteTask",       "write",           True,  False],
-    ["POST",   "/tenants/{tenant_id}/tasks/{task_id}/assign",           "AssignTask",       "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}/tasks/{task_id}/comments",         "ListComments",     "read",            False, False],
-    ["POST",   "/tenants/{tenant_id}/tasks/{task_id}/comments",         "CreateComment",    "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}/comments/{comment_id}",            "ReadComment",      "read",            False, False],
-    ["DELETE", "/tenants/{tenant_id}/comments/{comment_id}",            "DeleteComment",    "write",           True,  False],
-    ["GET",    "/tenants/{tenant_id}/search",                           "SearchTenant",     "search",          False, False],
-    ["POST",   "/tenants/{tenant_id}/exports",                          "RequestExport",    "export_request",  True,  True],
-    ["GET",    "/tenants/{tenant_id}/exports/{export_id}",              "DownloadExport",   "export_download", False, True],
-    ["POST",   "/tenants/{tenant_id}/integrations/call",                "IntegrationCall",  "integration",     True,  True]
+    ["POST",   "/auth/register",                                                        "RegisterUser",     "auth_register",   True,  False, "auth.register"],
+    ["POST",   "/auth/login",                                                           "LoginUser",        "auth_login",      True,  False, "auth.login"],
+    ["POST",   "/auth/logout",                                                          "LogoutSession",    "auth",            True,  False, "auth.logout"],
+    ["POST",   "/auth/refresh",                                                         "RefreshSession",   "auth",            True,  False, "auth.token_issued"],
+    ["POST",   "/auth/reauth",                                                          "ReauthSession",    "auth",            True,  False, "auth.reauth_required"],
+    ["GET",    "/auth/session",                                                         "GetSession",       "read",            False, False, ""],
+    ["GET",    "/tenants",                                                              "ListMyTenants",    "read",            False, False, "tenant.read"],
+    ["POST",   "/tenants",                                                              "CreateTenant",     "write",           True,  False, "tenant.create"],
+    ["GET",    "/tenants/{tenant_id}",                                                  "ReadTenant",       "read",            False, False, "tenant.read"],
+    ["GET",    "/tenants/{tenant_id}/members",                                          "ListMembers",      "read",            False, False, "tenant.read"],
+    ["POST",   "/tenants/{tenant_id}/members/invites",                                  "InviteMember",     "write",           True,  False, "member.invite"],
+    ["POST",   "/tenants/{tenant_id}/invites/accept",                                   "AcceptInvite",     "write",           True,  False, "member.accept"],
+    ["PATCH",  "/tenants/{tenant_id}/members/{membership_id}",                          "ChangeMemberRole", "write",           True,  True,  "member.role_change"],
+    ["DELETE", "/tenants/{tenant_id}/members/{membership_id}",                          "RemoveMember",     "write",           True,  True,  "member.remove"],
+    ["GET",    "/tenants/{tenant_id}/projects",                                         "ListProjects",     "read",            False, False, "project.list"],
+    ["POST",   "/tenants/{tenant_id}/projects",                                         "CreateProject",    "write",           True,  False, "project.create"],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}",                            "ReadProject",      "read",            False, False, "project.read"],
+    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}",                            "UpdateProject",    "write",           True,  False, "project.update"],
+    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}",                            "DeleteProject",    "write",           True,  False, "project.delete"],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks",                      "ListTasks",        "read",            False, False, "task.list"],
+    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks",                      "CreateTask",       "write",           True,  False, "task.create"],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "ReadTask",         "read",            False, False, "task.read"],
+    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "UpdateTask",       "write",           True,  False, "task.update"],
+    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "DeleteTask",       "write",           True,  False, "task.delete"],
+    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/assign",     "AssignTask",       "write",           True,  False, "task.assign"],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments",   "ListComments",     "read",            False, False, "comment.list"],
+    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments",   "CreateComment",    "write",           True,  False, "comment.create"],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", "ReadComment",   "read",  False, False, "comment.read"],
+    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", "DeleteComment", "write", True,  False, "comment.delete"],
+    ["GET",    "/tenants/{tenant_id}/search",                                           "SearchTenant",     "search",          False, False, "search.query"],
+    ["POST",   "/tenants/{tenant_id}/exports",                                          "RequestExport",    "export_request",  True,  True,  "export.request"],
+    ["GET",    "/tenants/{tenant_id}/exports/{export_id}",                              "DownloadExport",   "export_download", False, True,  "export.download"],
+    ["POST",   "/tenants/{tenant_id}/integrations/call",                                "IntegrationCall",  "integration",     True,  True,  "integration.call"]
 ];
+
+# The action emitted when a login attempt fails
+# (x-northwind-mapping: audit_action_on_failure on POST /auth/login).
+glob:pub ACTION_LOGIN_FAILED: str = "auth.login_failed";
 
 # ---------------------------------------------------------------------------
 # Environment access.
@@ -343,7 +351,11 @@ def load_settings -> Settings {
         bind_host=host,
         bind_port=port,
         upstream=up.rstrip("/"),
-        audit_path=env_str("AUDIT_PATH", "var/audit/audit.jsonl"),
+        # Same sink, same env var as the application's emitter
+        # (app/security/audit.jac:313) so gateway and guard() events land in one
+        # file and the per-session seq chain has no holes. AUDIT_PATH is kept as
+        # an alias only because this module shipped with it first.
+        audit_path=env_str("APP_AUDIT_LOG", env_str("AUDIT_PATH", "var/audit/audit.jsonl")),
         controls_path=env_str("CONTROLS_PATH", "var/controls/controls.json"),
         csp=env_str("APP_CSP", DEFAULT_CSP),
         upstream_bearer=env_str("JAC_UPSTREAM_BEARER", ""),
@@ -410,6 +422,7 @@ def resolve_route(method: str, path: str) -> Any {
             "route_class": row[3],
             "mutating": row[4],
             "step_up": row[5],
+            "audit_action": row[6],
             "params": params
         };
     }

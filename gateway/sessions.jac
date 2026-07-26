@@ -19,7 +19,7 @@ import uuid;
 import hmac;
 import hashlib;
 import secrets;
-import threading;
+import from threading { Lock }
 import jwt;
 import from typing { Any }
 import from config {
@@ -28,7 +28,7 @@ import from config {
 }
 import from ctxsig { ctx_hash }
 
-glob SESSION_LOCK: Any = threading.Lock();
+glob SESSION_LOCK: Lock = Lock();
 
 glob:pub ANON_BINDING: str = "anon";
 

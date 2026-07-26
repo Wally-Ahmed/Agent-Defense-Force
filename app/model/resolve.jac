@@ -327,9 +327,9 @@ def:pub resolve_in_tenant(tenant: Tenant, target_kind: str, target_id: str) -> o
 
 Reads through an opaque handle with getattr so this works for any target kind
 without the caller narrowing the type first."""
-def:pub sensitivity_of(node: object) -> str {
-    if node is None {
+def:pub sensitivity_of(target: object) -> str {
+    if target is None {
         return "";
     }
-    return getattr(node, "sensitivity", "normal");
+    return getattr(target, "sensitivity", "normal");
 }

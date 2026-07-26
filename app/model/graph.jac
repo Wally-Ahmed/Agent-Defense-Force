@@ -101,6 +101,15 @@ node ExportJob {
     has row_count: int = 0;
     has requested_by: str = "";
     has created_at: int = 0;
+    # --- descriptive fields, added for the domain layer (T3). All defaulted.
+    has format: str = "json";      # json | csv
+    has include: list = [];        # projects | tasks | comments | members | audit
+    has project_ids: list = [];    # "" means every project the requester can reach
+    has ready_at: int = 0;
+    has expires_at: int = 0;
+    # The requester's sensitivity ceiling AT REQUEST TIME, recorded so a later
+    # download can be re-filtered and the two can be compared.
+    has sensitivity_ceiling: str = "normal";
 }
 
 # --------------------------------------------------------------------------
@@ -153,6 +162,13 @@ node Project {
     has visibility: str = "tenant";     # tenant | private
     has sensitivity: str = "normal";    # normal | confidential | canary
     has created_at: int = 0;
+    # --- descriptive fields, added for the domain layer (T3). Every one is
+    # defaulted, so nothing that existed before this block changed behaviour.
+    has name: str = "";
+    has description: str = "";
+    has status: str = "active";         # active | archived
+    has owner_user_id: str = "";
+    has updated_at: int = 0;
 }
 
 node Task {
@@ -163,6 +179,13 @@ node Task {
     has assignee_id: str = "";
     has sensitivity: str = "normal";    # normal | confidential | canary
     has created_at: int = 0;
+    # --- descriptive fields, added for the domain layer (T3).
+    has description: str = "";
+    has priority: str = "normal";       # low | normal | high | urgent
+    has due_date: str = "";             # ISO-8601 date, "" when unset
+    has labels: list = [];
+    has created_by: str = "";
+    has updated_at: int = 0;
 }
 
 node Comment {
@@ -171,6 +194,9 @@ node Comment {
     has body: str = "";
     has author_id: str = "";
     has created_at: int = 0;
+    # --- descriptive fields, added for the domain layer (T3).
+    has project_id: str = "";
+    has edited_at: int = 0;
 }
 
 # --------------------------------------------------------------------------

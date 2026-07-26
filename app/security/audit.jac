@@ -26,7 +26,7 @@
 import json;
 import os;
 import uuid;
-import from datetime { datetime, timezone }
+import from app.security.clock { now_ms, iso_ts }
 import from contracts.audit_event_contract { AuditEvent, ACTIONS, DENY_REASONS }
 import from app.model.graph { Platform, AuditChain, Records, get_platform }
 
@@ -155,19 +155,11 @@ glob:pub NOTICE_SINGLETON_ACTIONS: list[str] = ["tenant.create", "integration.ca
 # Clock. Epoch milliseconds is the app-internal time unit (see
 # app/model/graph.jac); the contract's `ts` is the ISO rendering of the same
 # instant, so the two can never disagree.
+#
+# now_ms/iso_ts are imported from app/security/clock.jac and re-exported here,
+# NOT reimplemented. Two renderings of `ts` in one repo is two chances to
+# disagree about the format the entire audit trail is keyed on.
 # --------------------------------------------------------------------------
-
-"""Current UTC time as epoch milliseconds."""
-def:pub now_ms() -> int {
-    return int(datetime.now(timezone.utc).timestamp() * 1000);
-}
-
-"""Render epoch milliseconds as ISO-8601 UTC with microseconds and a Z suffix."""
-def:pub iso_ts(ms: int) -> str {
-    return datetime.fromtimestamp(ms / 1000.0, timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ"
-    );
-}
 
 # --------------------------------------------------------------------------
 # Classification.
@@ -215,13 +207,13 @@ def:pub severity_for(
     }
     # Bulk egress on an ALLOWED action -- the exfiltration signal.
     if outcome == "allow" {
-        result_cap = BULK_RESULT_THRESHOLD;
-        bytes_cap = BULK_BYTES_THRESHOLD;
         if action in EGRESS_ACTIONS {
-            result_cap = EGRESS_RESULT_THRESHOLD;
-            bytes_cap = EGRESS_BYTES_THRESHOLD;
-        }
-        if result_count >= result_cap or resp_bytes >= bytes_cap {
+            if result_count >= EGRESS_RESULT_THRESHOLD
+               or resp_bytes >= EGRESS_BYTES_THRESHOLD {
+                return "high";
+            }
+        } elif result_count >= BULK_RESULT_THRESHOLD
+               or resp_bytes >= BULK_BYTES_THRESHOLD {
             return "high";
         }
     }
@@ -306,7 +298,7 @@ def next_chain(key: str) -> dict {
 }
 
 """Close the link: the next event on this key will chain to `event_id`."""
-def commit_chain(key: str, event_id: str) -> None {
+def commit_chain(key: str, event_id: str) {
     chain = find_or_create_chain(key);
     chain.last_event_id = event_id;
 }
@@ -326,7 +318,7 @@ def:pub audit_log_path() -> str {
 Keys land in AUDIT_FIELDS order because `ev` was built in that order and
 json.dumps preserves insertion order -- sort_keys is never used, so a diff of
 two audit lines lines up field for field."""
-def write_jsonl(ev: dict) -> None {
+def write_jsonl(ev: dict) {
     path = audit_log_path();
     parent = os.path.dirname(path);
     if parent != "" {
@@ -340,7 +332,7 @@ def write_jsonl(ev: dict) -> None {
 
 """Attach the event to the Platform as a graph node. AuditEvent's fields are
 exactly the 38 keys of `ev`, so ** constructs it directly."""
-def write_graph(ev: dict) -> None {
+def write_graph(ev: dict) {
     p = get_platform();
     p +>:Records:+> AuditEvent(**ev);
 }
@@ -445,36 +437,34 @@ def:pub emit_audit(fields: dict) -> dict {
     # 6. Dual sink, independently wrapped. One sink down is a degraded trail
     #    and must be screamed about; both down means the event is gone, which
     #    is fatal.
-    jsonl_ok = False;
-    graph_ok = False;
-    first_error = "";
+    jsonl_ok: bool = False;
+    graph_ok: bool = False;
+    jsonl_error: str = "";
+    graph_error: str = "";
 
     try {
         write_jsonl(ev);
         jsonl_ok = True;
     } except Exception as e {
-        first_error = "jsonl: " + str(e);
+        jsonl_error = str(e);
         print("AUDIT SINK FAILURE: jsonl sink failed for event "
-              + str(ev["event_id"]) + ": " + str(e));
+              + str(ev["event_id"]) + ": " + jsonl_error);
     }
 
     try {
         write_graph(ev);
         graph_ok = True;
     } except Exception as e2 {
-        if first_error == "" {
-            first_error = "graph: " + str(e2);
-        } else {
-            first_error = first_error + " | graph: " + str(e2);
-        }
+        graph_error = str(e2);
         print("AUDIT SINK FAILURE: graph sink failed for event "
-              + str(ev["event_id"]) + ": " + str(e2));
+              + str(ev["event_id"]) + ": " + graph_error);
     }
 
     if not jsonl_ok and not graph_ok {
         raise RuntimeError(
             "AUDIT SINK FAILURE: both sinks failed, event "
-            + str(ev["event_id"]) + " is LOST -- " + first_error
+            + str(ev["event_id"]) + " is LOST -- jsonl: " + jsonl_error
+            + " | graph: " + graph_error
         );
     }
 
