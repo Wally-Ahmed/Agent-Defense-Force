@@ -1,506 +1,257 @@
-# incident/scorers_sv.jac — the seven detection families.
+# incident/scorers.jac — the seven detection families.
 #
-# (Mandated path `incident/scorers.sv.jac` is a symlink to this file. A dotted filename is not
-#  importable in Jac -- `scorers.sv.jac` parses as package `scorers`, module `sv` -- so the
-#  undotted name is the real module, matching the convention in contracts/.)
+# NOTE ON THE FILENAME. The specification names this file `scorers.sv.jac`, and
+# that path exists — as a symlink to this one. A dotted Jac filename is not
+# importable: Jac resolves imports through Python module paths, so
+# `scorers.sv.jac` parses as package `scorers`, module `sv`. This is the same
+# constraint that renamed the frozen contracts to undotted names.
 #
-# CONTRACT FOR EVERY SCORER IN THIS FILE:
-#   * Pure. Same (obs, ctx) in -> same dict out. No I/O, no clock, no global mutation.
-#   * Reads ONLY the Observation projection (incident/projection.jac), which by construction
-#     contains no free text. `actor_email` and `route` do not exist in the input at all, so no
-#     scorer can branch on them -- injection resistance is structural, not a code-review promise.
-#   * Every string it does touch (session_id, client_fp, src_ip, asset_hash, endpoint_class) is
-#     used ONLY through equality, set membership, and counting. Never substring, never regex,
-#     never compared to a literal that an event could contain.
+# The underscore spelling is load-bearing, not cosmetic. Naming the real module
+# `scorers.jac` and aliasing `scorers.sv.jac` beside it sends jaclang 0.13.5's
+# parser into unbounded recursion — `jac check` and `jac test` both die with
+# RecursionError — because the resolver tries to descend into the `scorers`
+# module looking for a `sv` submodule. With the real module spelled
+# `scorers_sv.jac` there is no such module to descend into and the alias is
+# inert. Import `incident.scorers_sv`; never import through the dotted path.
 #
-# Each returns: {family, axis, score(0..1), fired, detail, evidence[event_id], join_keys[]}
+# EVERY SCORER IS A PURE FUNCTION OF NUMBERS.
+# The only inputs are a WindowFeatures (int/float/bool fields exclusively) and
+# resolved baseline Stats. That is not a style preference: `route` and
+# `actor_email` in the audit stream carry attacker-authored text, and the golden
+# fixture ships live prompt-injection payloads in both. A scorer that read a
+# string would be a scorer an attacker could write. The type signature is the
+# boundary — there is no string on WindowFeatures to read.
+#
+# ONE SHARED SENSITIVITY, NOT SEVEN.
+# Each z-scored family converts its deviation with the same z_to_score: fires at
+# z >= 2, saturates at z >= 4. Families that are structural rather than
+# statistical (pivot, escalation, canary) express the same 0.5 fire point in
+# their own units, and the mapping is stated in each docstring. Nothing here has
+# a per-family constant that could be nudged to make one fixture pass.
+#
+# | family       | axis     | metric                                              |
+# |--------------|----------|-----------------------------------------------------|
+# | denial_shape | identity | deny ratio AND distinct deny reason codes, vs base   |
+# | breadth      | asset    | distinct target_id and target_kind, z-scored         |
+# | novelty      | asset    | fraction of targets never touched by this principal  |
+# | cadence      | time     | min rolling inter-arrival CV + route-transition H    |
+# | pivot        | source   | one session/fp over >=2 ips or asns, or one source   |
+# |              |          | over >=2 principals                                  |
+# | escalation   | identity | climb in sensitivity/authority AFTER a denial        |
+# | canary       | asset    | any target_sensitivity == "canary"                   |
 
-import math;
-import from incident.tables { FAMILY_AXIS, is_authz_deny }
-import from incident.baselines { z_for, BUCKET_MS }
+import from incident.features { WindowFeatures }
+import from incident.baseline { Stat, zscore, z_to_score, clamp01, FIRE_THRESHOLD }
+import from incident.projection { FAMILY_AXIS }
 
-# Per-family firing thresholds. Structural, not tuned: each is the point at which the family's
-# own components say "this is not ordinary", independent of any other family.
-glob:pub FIRE: dict = {
-    "denial_shape": 0.50,
-    "breadth": 0.50,
-    "novelty": 0.60,
-    "cadence": 0.60,
-    "pivot": 0.40,
-    "escalation": 0.45,
-    "canary": 0.99
-};
+# Coefficient of variation below which a run of inter-arrivals is not human.
+# Human think-time in the fixture never produces a 5-gap run under 0.42; a
+# scheduler's jitter lands near 0.08. 0.30 sits in that gap and is a statement
+# about how hands work, not a number fitted to this file.
+glob:pub CADENCE_CV_FLOOR: float = 0.30;
 
-# Minimum support for novelty. Not a tuning dial: they are the point below which the ratio has
-# no statistical meaning at all.
-glob:pub MIN_NOVELTY_ASSETS: int = 4;    # distinct targets in the window
-glob:pub MIN_NOVELTY_PRIOR: int = 8;     # distinct targets the principal touched before it
-glob:pub MIN_NOVELTY_NOVEL: int = 3;     # distinct never-seen targets inside it
+# Escalation is measured in asset-rank steps, where a full sensitivity step
+# (normal -> confidential) is 2 and merely reaching a privileged target kind is
+# 1. Dividing by 4 puts the fire point at exactly one sensitivity step: being
+# denied and then reaching for a *more sensitive class* of thing. Touching a
+# privileged kind after a denial, on its own, is half a signal.
+glob:pub ESCALATION_FULL_STEPS: float = 4.0;
+
+# Pivot fires at two distinct addresses (or ASNs, or principals) under one
+# identifier and saturates at three.
+glob:pub PIVOT_FULL_FANOUT: float = 2.0;
 
 
-# ------------------------------------------------------------------ shared pure helpers ----
-
-def clamp01(x: float) -> float {
-    return max(0.0, min(1.0, x));
+obj FamilyScore {
+    has family: str = "";
+    has axis: str = "";
+    has score: float = 0.0;
+    has fired: bool = False;
+    has detail: dict = {};
 }
 
-def norm_z(z: float, cap: float) -> float {
-    return clamp01(max(z, 0.0) / cap);
-}
 
-def ids(rows: list) -> list {
-    out = [];
-    for r in rows {
-        out.append(r["event_id"]);
-    }
-    return out;
-}
-
-def subject_keys(rows: list) -> list {
-    # Correlation keys the evidence actually carries. The unauthenticated sentinel is NEVER
-    # emitted as a principal key -- "anon" is a placeholder, not an entity, and joining on it
-    # would fuse unrelated anonymous traffic into one imaginary actor.
-    keys = {};
-    for r in rows {
-        if r["authenticated"] == 1 {
-            keys["principal:" + r["principal_hash"]] = 1;
-        }
-        if r["session_id"] != "" {
-            keys["session:" + r["session_id"]] = 1;
-        }
-        if r["client_fp"] != "" {
-            keys["fp:" + r["client_fp"]] = 1;
-        }
-    }
-    return sorted(list(keys.keys()));
-}
-
-def asset_keys(rows: list) -> list {
-    keys = {};
-    for r in rows {
-        if r["has_target"] == 1 {
-            keys["asset:" + r["asset_hash"]] = 1;
-        }
-    }
-    return sorted(list(keys.keys()));
-}
-
-def distinct(rows: list, field: str) -> list {
-    seen = {};
-    for r in rows {
-        v = r[field];
-        if v != "" {
-            seen[v] = 1;
-        }
-    }
-    return sorted(list(seen.keys()));
-}
-
-def group_count(rows: list, key_field: str, value_field: str) -> dict {
-    # key -> sorted list of distinct values. Used by pivot for its span computations.
-    acc = {};
-    for r in rows {
-        k = r[key_field];
-        v = r[value_field];
-        if k == "" or v == "" {
-            continue;
-        }
-        acc.setdefault(k, {})[v] = 1;
-    }
-    out = {};
-    for k in sorted(list(acc.keys())) {
-        out[k] = sorted(list(acc[k].keys()));
-    }
-    return out;
-}
-
-def bucket_peaks(rows: list) -> dict {
-    # Peak per-minute distinct-asset and distinct-kind counts inside the window. Comparing a
-    # per-minute peak against a per-minute-bucket baseline keeps the units honest.
-    buckets = {};
-    for r in rows {
-        b = r["ts_ms"] // BUCKET_MS;
-        cell = buckets.setdefault(b, {"assets": {}, "kinds": {}, "n": 0});
-        cell["n"] += 1;
-        if r["has_target"] == 1 {
-            cell["assets"][r["asset_hash"]] = 1;
-        }
-        if r["target_kind"] != "" {
-            cell["kinds"][r["target_kind"]] = 1;
-        }
-    }
-    pa = 0;
-    pk = 0;
-    pn = 0;
-    for b in sorted(list(buckets.keys())) {
-        pa = max(pa, len(buckets[b]["assets"]));
-        pk = max(pk, len(buckets[b]["kinds"]));
-        pn = max(pn, buckets[b]["n"]);
-    }
-    return {"assets": pa, "kinds": pk, "events": pn};
-}
-
-def result(family: str, score: float, detail: dict, evidence: list, join_keys: list) -> dict {
+"""Assemble a FamilyScore, deriving the axis from the closed family->axis map so
+a family can never be filed under an axis it does not belong to."""
+def _mk(family: str, score: float, detail: dict) -> FamilyScore {
     s = clamp01(score);
-    return {
-        "family": family,
-        "axis": FAMILY_AXIS[family],
-        "score": round(s, 4),
-        "fired": s >= FIRE[family],
-        "detail": detail,
-        "evidence": evidence,
-        "join_keys": join_keys
-    };
+    return FamilyScore(
+        family=family,
+        axis=str(FAMILY_AXIS.get(family, "")),
+        score=s,
+        fired=s >= FIRE_THRESHOLD,
+        detail=detail
+    );
 }
 
 
-# ------------------------------------------------------------------ 1. denial_shape --------
-# Axis: identity. Deny RATIO and the count of DISTINCT deny reason codes, both against the
-# principal's own EWMA baseline. A workload with zero denials scores exactly 0 and can never
-# fire -- there is no threshold at which "no denials" becomes denial-shaped.
+"""denial_shape (identity) — being told no, in several different ways.
 
-def score_denial_shape(obs: list, ctx: dict) -> dict {
-    n = len(obs);
-    if n == 0 {
-        return result("denial_shape", 0.0, {"events": 0}, [], []);
+Deny RATIO alone is a retry detector: a benign client that fails once and tries
+the same call again produces a spike of one reason code. Counting DISTINCT deny
+reason codes is what separates that from probing, which collects NO_SESSION,
+INSUFFICIENT_ROLE, NOT_A_MEMBER, TENANT_MISMATCH and REAUTH_REQUIRED on the way
+through a permission boundary. Both are scored against the same baseline and
+averaged, so a high ratio with one reason code cannot fire this family alone."""
+def denial_shape(f: WindowFeatures, ratio_stat: Stat, reasons_stat: Stat) -> FamilyScore {
+    if not ratio_stat.warm or not reasons_stat.warm {
+        return _mk("denial_shape", 0.0, {"cold": 1.0});
     }
-    denies = [];
-    reasons = {};
-    for r in obs {
-        if r["outcome"] == "deny" {
-            denies.append(r);
-            if r["reason"] != "" {
-                reasons[r["reason"]] = 1;
-            }
-        }
-    }
-    d = len(denies);
-    k = len(reasons);
-    if d == 0 {
-        return result("denial_shape", 0.0, {"events": n, "denies": 0, "reason_codes": 0}, [], []);
-    }
-    ratio = float(d) / float(n);
-    z = z_for(ctx["store"], ctx["primary_principal"], ctx["primary_tenant"], "deny_ratio", ratio);
-    ratio_c = clamp01(ratio / 0.25);              # a quarter of requests denied saturates
-    reason_c = clamp01(float(max(k - 1, 0)) / 2.0);  # >= 3 distinct codes saturates
-    z_c = norm_z(z, 3.0);
-    score = 0.40 * ratio_c + 0.40 * reason_c + 0.20 * z_c;
-    # Structural floor: one-off denials with a single cause are ordinary operation.
-    if d < 2 or k < 2 {
-        score = min(score, FIRE["denial_shape"] - 0.01);
-    }
-    detail = {"events": n, "denies": d, "deny_ratio": round(ratio, 4), "reason_codes": k,
-              "reasons": sorted(list(reasons.keys())), "z_deny_ratio": round(z, 3)};
-    return result("denial_shape", score, detail, ids(denies), subject_keys(denies));
+    z_ratio = zscore(f.deny_ratio, ratio_stat.mean, ratio_stat.var);
+    z_reasons = zscore(float(f.n_deny_reasons), reasons_stat.mean, reasons_stat.var);
+    score = 0.5 * (z_to_score(z_ratio) + z_to_score(z_reasons));
+    return _mk("denial_shape", score, {
+        "deny_ratio": f.deny_ratio,
+        "n_deny": float(f.n_deny),
+        "n_deny_reasons": float(f.n_deny_reasons),
+        "z_deny_ratio": z_ratio,
+        "z_deny_reasons": z_reasons
+    });
 }
 
 
-# ------------------------------------------------------------------ 2. breadth -------------
-# Axis: asset. Distinct target_id and distinct target_kind per minute, z-scored against the
-# principal's own EWMA. This is the family the bulk importer is DESIGNED to trip; it is here to
-# be insufficient on its own.
+"""breadth (asset) — how much of the estate one actor touched.
 
-def score_breadth(obs: list, ctx: dict) -> dict {
-    if len(obs) == 0 {
-        return result("breadth", 0.0, {}, [], []);
+Distinct target ids and distinct target kinds, both z-scored against the
+principal's own baseline. Per-principal is what makes this survive the bulk
+importer: 27 distinct targets is enormous for a person and unremarkable for the
+reporting job that does it every window."""
+def breadth(f: WindowFeatures, id_stat: Stat, kind_stat: Stat) -> FamilyScore {
+    if not id_stat.warm or not kind_stat.warm {
+        return _mk("breadth", 0.0, {"cold": 1.0});
     }
-    peaks = bucket_peaks(obs);
-    z_a = z_for(ctx["store"], ctx["primary_principal"], ctx["primary_tenant"],
-                "distinct_assets", float(peaks["assets"]));
-    z_k = z_for(ctx["store"], ctx["primary_principal"], ctx["primary_tenant"],
-                "distinct_kinds", float(peaks["kinds"]));
-    score = 0.60 * norm_z(z_a, 3.0) + 0.40 * norm_z(z_k, 2.0);
-    targeted = [];
-    for r in obs {
-        if r["has_target"] == 1 {
-            targeted.append(r);
-        }
-    }
-    detail = {"peak_distinct_assets": peaks["assets"], "peak_distinct_kinds": peaks["kinds"],
-              "z_assets": round(z_a, 3), "z_kinds": round(z_k, 3),
-              "window_distinct_assets": len(distinct(obs, "asset_hash"))};
-    return result("breadth", score, detail, ids(targeted),
-                  subject_keys(obs) + asset_keys(targeted));
+    z_id = zscore(float(f.d_target_id), id_stat.mean, id_stat.var);
+    z_kind = zscore(float(f.d_target_kind), kind_stat.mean, kind_stat.var);
+    score = 0.5 * (z_to_score(z_id) + z_to_score(z_kind));
+    return _mk("breadth", score, {
+        "d_target_id": float(f.d_target_id),
+        "d_target_kind": float(f.d_target_kind),
+        "z_d_target_id": z_id,
+        "z_d_target_kind": z_kind
+    });
 }
 
 
-# ------------------------------------------------------------------ 3. novelty -------------
-# Axis: asset. Fraction of the window's targets this principal has never touched before the
-# window opened. A stable path set (the bulk importer re-reading the same 27 objects) scores ~0
-# no matter how many times it reads them.
+"""novelty (asset) — the fraction of targets this principal has never touched.
 
-def score_novelty(obs: list, ctx: dict) -> dict {
-    win_assets = {};
-    rows = [];
-    for r in obs {
-        if r["has_target"] == 1 {
-            win_assets[r["asset_hash"]] = 1;
-            rows.append(r);
-        }
+Expressed as the fraction itself, so it fires when at least half of what the
+actor reached for in this window is new to them. Suppressed entirely until the
+principal has touched NOVELTY_MIN_PRIOR distinct targets: before that, every
+target is new by definition and the metric would flag every account's first ten
+minutes. Prior targets are those seen strictly BEFORE the window opened, so
+overlapping windows cannot launder a fresh target into a familiar one."""
+def novelty(f: WindowFeatures, min_prior: int) -> FamilyScore {
+    if f.prior_targets < min_prior {
+        return _mk("novelty", 0.0, {"cold": 1.0, "prior_targets": float(f.prior_targets)});
     }
-    total = len(win_assets);
-    prior = ctx["prior_assets"];             # {asset_hash: 1}, first-seen strictly before window
-    prior_n = len(prior);
-    # Minimum support. "Never touched before" is meaningless for a principal with no history,
-    # and a 1-of-2 novel ratio is noise, not discovery.
-    if total < MIN_NOVELTY_ASSETS or prior_n < MIN_NOVELTY_PRIOR {
-        return result("novelty", 0.0, {"window_assets": total, "prior_assets": prior_n,
-                                       "cold": True}, [], []);
-    }
-    novel = [];
-    for a in sorted(list(win_assets.keys())) {
-        if a not in prior {
-            novel.append(a);
-        }
-    }
-    if len(novel) < MIN_NOVELTY_NOVEL {
-        return result("novelty", 0.0, {"window_assets": total, "prior_assets": prior_n,
-                                       "novel_assets": len(novel), "cold": False}, [], []);
-    }
-    frac = float(len(novel)) / float(total);
-    novel_rows = [];
-    for r in rows {
-        if r["asset_hash"] not in prior {
-            novel_rows.append(r);
-        }
-    }
-    detail = {"window_assets": total, "prior_assets": prior_n, "novel_assets": len(novel),
-              "novel_fraction": round(frac, 4), "cold": False};
-    return result("novelty", frac, detail, ids(novel_rows),
-                  subject_keys(novel_rows) + asset_keys(novel_rows));
+    return _mk("novelty", f.novelty_frac, {
+        "novelty_frac": f.novelty_frac,
+        "prior_targets": float(f.prior_targets),
+        "d_target_id": float(f.d_target_id)
+    });
 }
 
 
-# ------------------------------------------------------------------ 4. cadence -------------
-# Axis: time. Inter-arrival stdev/mean (low = machine-driven) plus endpoint-class transition
-# entropy (low = a script walking a fixed loop). Deliberately volume-blind: it says "automated",
-# never "malicious". The bulk importer scores high here and that is correct.
+"""cadence (time) — timing that is not a person, or exploration that is not work.
 
-def score_cadence(obs: list, ctx: dict) -> dict {
-    n = len(obs);
-    if n < 6 {
-        return result("cadence", 0.0, {"events": n, "too_few": True}, [], []);
+Two independent tells, scored as whichever is stronger. Regularity: the
+tightest run of five consecutive inter-arrivals in the window; below
+CADENCE_CV_FLOOR nobody is typing. Route-transition entropy: how unpredictable
+the next endpoint class is given the last one, z-scored against baseline — a
+scripted sweep almost never repeats a transition, while real work and paginated
+reporting both cycle."""
+def cadence(f: WindowFeatures, entropy_stat: Stat) -> FamilyScore {
+    regularity = 0.0;
+    if f.iat_cv_min >= 0.0 {
+        regularity = clamp01((CADENCE_CV_FLOOR - f.iat_cv_min) / CADENCE_CV_FLOOR);
     }
-    deltas = [];
-    i = 1;
-    while i < n {
-        d = obs[i]["ts_ms"] - obs[i - 1]["ts_ms"];
-        # Idle gaps between bursts are not cadence. 30 s is the human think-time ceiling used by
-        # the fixture; above it the two events are not part of one rhythm.
-        if d >= 0 and d <= 30000 {
-            deltas.append(float(d));
-        }
-        i += 1;
+    entropy_score = 0.0;
+    z_h = 0.0;
+    if entropy_stat.warm {
+        z_h = zscore(f.route_entropy, entropy_stat.mean, entropy_stat.var);
+        entropy_score = z_to_score(z_h);
     }
-    if len(deltas) < 5 {
-        return result("cadence", 0.0, {"events": n, "deltas": len(deltas), "too_few": True}, [], []);
-    }
-    mean = sum(deltas) / float(len(deltas));
-    if mean <= 0.0 {
-        return result("cadence", 0.0, {"events": n, "degenerate": True}, [], []);
-    }
-    acc = 0.0;
-    for d in deltas {
-        acc += (d - mean) * (d - mean);
-    }
-    sd = math.sqrt(acc / float(len(deltas)));
-    cv = sd / mean;
-    regularity = clamp01(1.0 - cv);
-
-    # transition entropy over the ENUM-DERIVED endpoint class (never over raw `route`)
-    trans = {};
-    i = 1;
-    while i < n {
-        t = obs[i - 1]["endpoint_class"] + ">" + obs[i]["endpoint_class"];
-        trans[t] = trans.get(t, 0) + 1;
-        i += 1;
-    }
-    tot = float(n - 1);
-    h = 0.0;
-    for t in sorted(list(trans.keys())) {
-        p = float(trans[t]) / tot;
-        h -= p * math.log(p);
-    }
-    hmax = math.log(max(tot, 2.0));
-    norm_h = clamp01(h / hmax);
-    score = 0.60 * regularity + 0.40 * (1.0 - norm_h);
-    detail = {"events": n, "deltas": len(deltas), "mean_ms": round(mean, 1),
-              "cv": round(cv, 4), "regularity": round(regularity, 4),
-              "distinct_transitions": len(trans), "norm_entropy": round(norm_h, 4)};
-    return result("cadence", score, detail, ids(obs), subject_keys(obs));
+    score = regularity if regularity > entropy_score else entropy_score;
+    return _mk("cadence", score, {
+        "iat_cv_min": f.iat_cv_min,
+        "regularity": regularity,
+        "route_entropy": f.route_entropy,
+        "z_route_entropy": z_h,
+        "d_route_class": float(f.d_route_class)
+    });
 }
 
 
-# ------------------------------------------------------------------ 5. pivot ---------------
-# Axis: source/session. One session_id or client_fp seen across >= 2 src_ip or >= 2 ASN, or one
-# source seen driving >= 2 distinct AUTHENTICATED principals. Only counts authenticated
-# principals: "anonymous traffic then a login from the same IP" is what every normal sign-in
-# looks like, and treating it as a pivot would fire on the whole user base.
+"""pivot (source/session) — one actor wearing several addresses, or one address
+wearing several actors.
 
-def score_pivot(obs: list, ctx: dict) -> dict {
-    if len(obs) == 0 {
-        return result("pivot", 0.0, {}, [], []);
+Purely structural: no baseline can help here, because the first time a session
+appears from two networks is exactly the event of interest. Fires at a fanout of
+two under a single session id or client fingerprint, which is the shape of
+source rotation that keeps a stolen session alive across a blocklist."""
+def pivot(f: WindowFeatures) -> FamilyScore {
+    ip_score = clamp01(float(f.max_ips_per_identifier - 1) / PIVOT_FULL_FANOUT);
+    asn_score = clamp01(float(f.max_asns_per_identifier - 1) / PIVOT_FULL_FANOUT);
+    prin_score = clamp01(float(f.max_principals_per_source - 1) / PIVOT_FULL_FANOUT);
+    score = ip_score;
+    if asn_score > score {
+        score = asn_score;
     }
-    sess_ip = group_count(obs, "session_id", "src_ip");
-    fp_ip = group_count(obs, "client_fp", "src_ip");
-    sess_asn = group_count(obs, "session_id", "src_asn");
-    fp_asn = group_count(obs, "client_fp", "src_asn");
-
-    auth_rows = [];
-    for r in obs {
-        if r["authenticated"] == 1 {
-            auth_rows.append(r);
-        }
+    if prin_score > score {
+        score = prin_score;
     }
-    ip_prin = group_count(auth_rows, "src_ip", "principal_hash");
-    fp_prin = group_count(auth_rows, "client_fp", "principal_hash");
-
-    ip_span = 0;
-    span_key = "";
-    for g in [sess_ip, fp_ip] {
-        for k in sorted(list(g.keys())) {
-            if len(g[k]) > ip_span {
-                ip_span = len(g[k]);
-                span_key = k;
-            }
-        }
-    }
-    asn_span = 0;
-    for g in [sess_asn, fp_asn] {
-        for k in sorted(list(g.keys())) {
-            asn_span = max(asn_span, len(g[k]));
-        }
-    }
-    prin_span = 0;
-    for g in [ip_prin, fp_prin] {
-        for k in sorted(list(g.keys())) {
-            prin_span = max(prin_span, len(g[k]));
-        }
-    }
-    score = 0.0;
-    if ip_span >= 2 or asn_span >= 2 or prin_span >= 2 {
-        score = clamp01(0.34 * float(ip_span - 1) + 0.34 * float(max(asn_span - 1, 0))
-                        + 0.50 * float(max(prin_span - 1, 0)));
-        score = max(score, 0.40);         # any confirmed multiplexing is at least a fire
-    }
-    ev = [];
-    if span_key != "" {
-        for r in obs {
-            if r["session_id"] == span_key or r["client_fp"] == span_key {
-                ev.append(r);
-            }
-        }
-    }
-    if len(ev) == 0 {
-        ev = obs;
-    }
-    detail = {"ip_span": ip_span, "asn_span": asn_span, "principal_span": prin_span,
-              "distinct_src_ips": len(distinct(obs, "src_ip")),
-              "distinct_client_fp": len(distinct(obs, "client_fp"))};
-    return result("pivot", score, detail, ids(ev), subject_keys(ev));
+    return _mk("pivot", score, {
+        "max_ips_per_identifier": float(f.max_ips_per_identifier),
+        "max_asns_per_identifier": float(f.max_asns_per_identifier),
+        "max_principals_per_source": float(f.max_principals_per_source),
+        "d_src_ip": float(f.d_src_ip)
+    });
 }
 
 
-# ------------------------------------------------------------------ 6. escalation ----------
-# Axis: identity. Monotonic climb in required-role rank and/or target_sensitivity rank of the
-# attempts made AFTER the first denial. Denials are the precondition: with none, the post-deny
-# sequence is empty and the score is 0 by construction.
+"""escalation (identity) — reaching higher after being refused.
 
-def score_escalation(obs: list, ctx: dict) -> dict {
-    n = len(obs);
-    first_deny = -1;
-    n_deny = 0;
-    i = 0;
-    while i < n {
-        if obs[i]["outcome"] == "deny" {
-            if first_deny < 0 {
-                first_deny = i;
-            }
-            n_deny += 1;
-        }
-        i += 1;
+Requires a denial in the window: a rising sensitivity gradient with no refusals
+is somebody's ordinary promotion to more interesting work. What is scored is the
+gap between the highest asset rank reached before the first denial and the
+highest reached after it, so the order of events, not their contents, is the
+evidence."""
+def escalation(f: WindowFeatures) -> FamilyScore {
+    if f.n_deny <= 0 {
+        return _mk("escalation", 0.0, {"n_deny": 0.0});
     }
-    if first_deny < 0 {
-        return result("escalation", 0.0, {"denies": 0, "no_denials": True}, [], []);
-    }
-    pre_role = 0;
-    pre_sens = 0;
-    i = 0;
-    while i < first_deny {
-        pre_role = max(pre_role, obs[i]["role_rank"]);
-        pre_sens = max(pre_sens, obs[i]["sens_rank"]);
-        i += 1;
-    }
-    post = [];
-    i = first_deny;
-    while i < n {
-        post.append(obs[i]);
-        i += 1;
-    }
-    post_role = pre_role;
-    post_sens = pre_sens;
-    bumps = 0;
-    climbing = [];
-    run_level = pre_role + 2 * pre_sens;
-    for r in post {
-        lvl = r["role_rank"] + 2 * r["sens_rank"];
-        if lvl > run_level {
-            bumps += 1;
-            run_level = lvl;
-            climbing.append(r);
-        }
-        post_role = max(post_role, r["role_rank"]);
-        post_sens = max(post_sens, r["sens_rank"]);
-    }
-    role_climb = max(0, post_role - pre_role);
-    sens_climb = max(0, post_sens - pre_sens);
-    score = 0.0;
-    if (role_climb >= 1 or sens_climb >= 1) and n_deny >= 2 {
-        score = clamp01(0.30 * float(role_climb) + 0.35 * float(sens_climb)
-                        + 0.15 * float(bumps));
-    }
-    ev = climbing;
-    if len(ev) == 0 {
-        ev = post;
-    }
-    detail = {"denies": n_deny, "pre_role_rank": pre_role, "post_role_rank": post_role,
-              "pre_sens_rank": pre_sens, "post_sens_rank": post_sens,
-              "role_climb": role_climb, "sens_climb": sens_climb, "monotonic_bumps": bumps};
-    return result("escalation", score, detail, ids(ev), subject_keys(ev));
+    score = clamp01(float(f.escalation_delta) / ESCALATION_FULL_STEPS);
+    return _mk("escalation", score, {
+        "escalation_delta": float(f.escalation_delta),
+        "n_deny": float(f.n_deny),
+        "n_cross_tenant": float(f.n_cross_tenant)
+    });
 }
 
 
-# ------------------------------------------------------------------ 7. canary --------------
-# Axis: asset. Any touch of a canary-sensitivity object. Binary by design: a canary exists only
-# to be untouched, so there is no "a little bit of canary".
+"""canary (asset) — a resource that exists only to be touched by the wrong person.
 
-def score_canary(obs: list, ctx: dict) -> dict {
-    hits = [];
-    for r in obs {
-        if r["target_sensitivity"] == "canary" {
-            hits.append(r);
-        }
-    }
-    if len(hits) == 0 {
-        return result("canary", 0.0, {"canary_touches": 0}, [], []);
-    }
-    detail = {"canary_touches": len(hits),
-              "canary_assets": len(distinct(hits, "asset_hash")),
-              "denied": len([r for r in hits if r["outcome"] == "deny"])};
-    return result("canary", 1.0, detail, ids(hits), subject_keys(hits) + asset_keys(hits));
+There is no baseline and no ratio. A canary has no legitimate reader, so one
+touch is the whole signal."""
+def canary(f: WindowFeatures) -> FamilyScore {
+    hit = 1.0 if f.n_canary > 0 else 0.0;
+    return _mk("canary", hit, {"n_canary": float(f.n_canary)});
 }
 
 
-# ------------------------------------------------------------------ dispatcher -------------
-
-def score_all(obs: list, ctx: dict) -> list {
+"""Run all seven families over one window. Returns FamilyScores in a fixed order
+so two runs over the same input produce byte-identical output."""
+def score_all(f: WindowFeatures,
+              s_deny_ratio: Stat, s_deny_reasons: Stat,
+              s_d_target_id: Stat, s_d_target_kind: Stat,
+              s_route_entropy: Stat, novelty_min_prior: int) -> list[FamilyScore] {
     return [
-        score_denial_shape(obs, ctx),
-        score_breadth(obs, ctx),
-        score_novelty(obs, ctx),
-        score_cadence(obs, ctx),
-        score_pivot(obs, ctx),
-        score_escalation(obs, ctx),
-        score_canary(obs, ctx)
+        denial_shape(f, s_deny_ratio, s_deny_reasons),
+        breadth(f, s_d_target_id, s_d_target_kind),
+        novelty(f, novelty_min_prior),
+        cadence(f, s_route_entropy),
+        pivot(f),
+        escalation(f),
+        canary(f)
     ];
 }

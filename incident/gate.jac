@@ -1,210 +1,155 @@
-# incident/gate.jac — THE PROMOTION GATE.
+# incident/gate.jac — the promotion gate.
 #
-#   Promote iff, inside one 10-minute sliding window:
-#     (1) >= 3 DISTINCT families fired
-#     (2) spanning >= 2 DISTINCT axes
-#     (3) sharing >= 1 join key across every fired signal
-#     (4) aggregate score >= theta
-#     (5) at least one of {denial_shape, pivot, escalation} is among them
+# THE RULE.
+#   Create an Incident iff, within a 10-minute sliding window:
+#     >= 3 distinct families fire,
+#     spanning >= 2 distinct axes,
+#     sharing >= 1 join key (principal, session, source or asset),
+#     aggregate score >= THETA,
+#     and at least one of {denial_shape, pivot, escalation} is among them.
 #
-# Clause (5) is what carries the negative control, not theta. A legitimate high-volume workload
-# fires breadth (asset axis) and cadence (time axis) and nothing else: it has no denials, so
-# denial_shape is 0 and escalation's post-denial sequence is empty; it runs one principal from
-# one source, so every pivot span is 1. Those three zeros are structural, not threshold-relative
-# -- see tests/test_theta_not_load_bearing (theta = 0.0 and the bulk importer is still silent).
+# WHY THE MANDATORY MEMBER IS THE LOAD-BEARING CLAUSE.
+# The other four families measure *volume and variety*: breadth, novelty,
+# cadence and canary all describe how much and how oddly an account moved. A
+# legitimate high-throughput integration is, by construction, high volume and
+# high variety — the golden fixture's bulk importer returns 69x more rows than
+# the campaign does, and on the fixture it does fire three of those families in
+# one window with an aggregate above THETA. What it never does is get told no,
+# rotate its source, or climb after a refusal. Those three are the families that
+# describe *friction with the authorization system*, and friction is the thing a
+# legitimate integration does not generate. Requiring one of them is what makes
+# the benign case pass cleanly without a rate limit, a volume exemption, or a
+# named allowlist entry.
+#
+# WHY THE JOIN KEY IS INTERSECTED, NOT ASSUMED.
+# Families firing in the same ten minutes are a coincidence unless they are
+# about the same thing. The gate intersects the join keys of the events each
+# firing family actually cited, so "denial_shape and pivot fired" only counts
+# when the denials and the rotation share a principal, a session, a source or an
+# asset — not merely a clock.
+#
+# ON THETA. See THETA's comment: it is a structural floor, and it is measurably
+# not the discriminator on the golden fixture.
 
-import hashlib;
-import from incident.tables { MANDATORY_FAMILIES, is_authz_deny, LIST_ACTIONS }
+import from incident.baseline { FIRE_THRESHOLD }
 
-glob:pub WINDOW_MS: int = 600000;          # the 10-minute sliding window
-glob:pub THETA: float = 1.80;              # see module docstring: NOT load-bearing
+glob:pub WINDOW_MS: int = 600000;   # 10-minute sliding window
+glob:pub STEP_MS: int = 60000;      # advanced one minute at a time
 
-glob:pub AUTH_ACTIONS: list = ["auth.register", "auth.login", "auth.login_failed", "auth.logout",
-                               "auth.session_expired", "auth.token_issued", "auth.token_revoked",
-                               "auth.reauth_required"];
+glob:pub MIN_FAMILIES: int = 3;
+glob:pub MIN_AXES: int = 2;
+glob:pub MANDATORY_FAMILIES: list = ["denial_shape", "pivot", "escalation"];
+
+# THETA is the aggregate (sum of firing family scores) floor.
+#
+# Chosen structurally, before running the fixture: the weakest configuration the
+# family/axis rules allow is three families at the bare fire threshold, summing
+# to 1.5. THETA = 2.0 excludes exactly that case — it says three families is not
+# enough if all three are marginal; at least one of them must be at full
+# strength. It is not derived from any measured value in the fixture.
+#
+# It is also, on this fixture, not the discriminator. Sweeping THETA from 0.0 to
+# 3.0 changes nothing about which populations promote: the campaign promotes at
+# every value in that range and the bulk importer and the benign users promote
+# at none of them, because they are stopped by the family, axis and mandatory
+# member rules long before the aggregate is consulted. That is the intended
+# design — the gate is structural, and THETA is a floor under it, not the thing
+# doing the work. tests/test_golden.jac asserts this sweep so the property
+# cannot silently rot into a tuned threshold.
+glob:pub THETA: float = 2.0;
 
 
-def intersect_keys(sigs: list) -> list {
-    # Join keys common to EVERY fired signal. Non-empty means the families are talking about one
-    # entity rather than coincidental neighbours in the same window.
-    if len(sigs) == 0 {
-        return [];
-    }
-    common = {};
-    for k in sigs[0]["join_keys"] {
-        common[k] = 1;
-    }
-    i = 1;
-    while i < len(sigs) {
-        nxt = {};
-        for k in sigs[i]["join_keys"] {
-            if k in common {
-                nxt[k] = 1;
-            }
-        }
-        common = nxt;
-        i += 1;
-    }
-    return sorted(list(common.keys()));
+obj GateVerdict {
+    has promote: bool = False;
+    has families: list = [];        # firing family names, sorted
+    has axes: list = [];            # distinct axes, sorted
+    has aggregate: float = 0.0;
+    has mandatory: list = [];       # which of the mandatory three fired
+    has shared_join_keys: list = [];
+    has failed: list = [];          # which clauses failed, for Explain
 }
 
 
-def evaluate(signals: list, theta: float) -> dict {
+"""Apply the gate to one window's FamilyScores.
+
+`family_join_keys` maps a family name to the join keys of the events that family
+cited. Only firing families are considered, in every clause."""
+def evaluate(scores: list, family_join_keys: dict) -> GateVerdict {
+    v = GateVerdict();
     fired = [];
-    for s in signals {
-        if s["fired"] {
-            fired.append(s);
-        }
-    }
-    fams = {};
-    axes = {};
+    axes = set();
     agg = 0.0;
-    for s in fired {
-        fams[s["family"]] = 1;
-        axes[s["axis"]] = 1;
-        agg += s["score"];
-    }
-    families = sorted(list(fams.keys()));
-    axis_list = sorted(list(axes.keys()));
-    shared = intersect_keys(fired);
     mandatory = [];
-    for f in families {
-        if f in MANDATORY_FAMILIES {
-            mandatory.append(f);
+    shared: set[str] = set();
+    first = True;
+
+    for s in scores {
+        if not s.fired {
+            continue;
+        }
+        fired.append(s.family);
+        axes.add(s.axis);
+        agg += s.score;
+        if s.family in MANDATORY_FAMILIES {
+            mandatory.append(s.family);
+        }
+        keys: set[str] = set();
+        raw: list = list(family_join_keys.get(s.family, []));
+        for k in raw {
+            keys.add(str(k));
+        }
+        if first {
+            shared = keys;
+            first = False;
+        } else {
+            shared = shared & keys;
         }
     }
-    clauses = {
-        "families_ge_3": len(families) >= 3,
-        "axes_ge_2": len(axis_list) >= 2,
-        "shared_join_key": len(shared) >= 1,
-        "aggregate_ge_theta": agg >= theta,
-        "mandatory_member": len(mandatory) >= 1
-    };
-    promote = True;
-    for c in sorted(list(clauses.keys())) {
-        if not clauses[c] {
-            promote = False;
-        }
+
+    v.families = sorted(fired);
+    v.axes = sorted(list(axes));
+    v.aggregate = agg;
+    v.mandatory = sorted(mandatory);
+    v.shared_join_keys = sorted(list(shared));
+
+    failed = [];
+    if len(fired) < MIN_FAMILIES {
+        failed.append("families<" + str(MIN_FAMILIES));
     }
-    return {
-        "promote": promote,
-        "clauses": clauses,
-        "families": families,
-        "axes": axis_list,
-        "mandatory": mandatory,
-        "shared_join_keys": shared,
-        "aggregate": round(agg, 4),
-        "theta": theta,
-        "fired": fired
-    };
+    if len(axes) < MIN_AXES {
+        failed.append("axes<" + str(MIN_AXES));
+    }
+    if len(shared) < 1 {
+        failed.append("no_shared_join_key");
+    }
+    if agg < THETA {
+        failed.append("aggregate<theta");
+    }
+    if len(mandatory) < 1 {
+        failed.append("no_denial_pivot_or_escalation");
+    }
+    v.failed = failed;
+    v.promote = len(failed) == 0;
+    return v;
 }
 
 
-def confidence(verdict: dict, n_stages: int) -> float {
-    c = (0.30 + 0.08 * float(len(verdict["families"]))
-         + 0.05 * float(len(verdict["axes"]))
-         + 0.06 * float(len(verdict["mandatory"]))
-         + 0.01 * float(n_stages));
-    return round(min(0.98, max(0.0, c)), 4);
-}
+"""Monitor confidence for a promoted window.
 
-
-def incident_id(subject: str, window_end_ms: int) -> str {
-    raw = subject + "|" + str(window_end_ms);
-    return "inc_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[0:16];
-}
-
-
-# ---------------------------------------------------------------- stage signatures ---------
-# Which of the ten authorized-scenario steps the evidence shows. Derived ONLY from closed enums
-# and timestamps -- no labels file, no free text, no per-fixture special cases.
-
-def stage_signatures(obs: list) -> list {
-    stages = {};
-    n = len(obs);
-    recon = 0;
-    sprays = 0;
-    authz_denies = 0;
-    logins_ok = 0;
-    token_issued = 0;
-    lists_ok = [];
-    sess_ip = {};
-    for r in obs {
-        if r["authenticated"] == 0 and r["action"] not in AUTH_ACTIONS {
-            recon += 1;
-        }
-        if r["action"] == "auth.login_failed" {
-            sprays += 1;
-        }
-        if r["action"] == "auth.login" and r["outcome"] == "allow" {
-            logins_ok += 1;
-        }
-        if r["action"] == "auth.token_issued" and r["outcome"] == "allow" {
-            token_issued += 1;
-        }
-        if r["outcome"] == "deny" and is_authz_deny(r["reason"]) {
-            authz_denies += 1;
-        }
-        if r["action"] in LIST_ACTIONS and r["outcome"] == "allow" {
-            lists_ok.append(r);
-        }
-        if r["session_id"] != "" and r["src_ip"] != "" {
-            sess_ip.setdefault(r["session_id"], {})[r["src_ip"]] = 1;
-        }
-        if r["sens_rank"] == 1 {
-            stages[8] = 1;
-        }
-        if r["sens_rank"] == 2 {
-            stages[10] = 1;
-        }
-        if r["action"] == "integration.call" and (r["tenant_cross"] == 1
-                                                  or r["reason"] == "TENANT_MISMATCH") {
-            stages[9] = 1;
-        }
+Deliberately conservative and bounded: it grows with how many independent
+families and axes agreed, not with how loud any one of them was, because a
+single family screaming is exactly the shape of a false positive. Capped below
+1.0 — a correlation engine that reports certainty is lying."""
+def confidence_of(v: GateVerdict) -> float {
+    if not v.promote {
+        return 0.0;
     }
-    if recon >= 2 {
-        stages[1] = 1;
+    base = 0.40;
+    base += 0.07 * float(len(v.families) - MIN_FAMILIES + 1);
+    base += 0.05 * float(len(v.axes) - MIN_AXES + 1);
+    base += 0.04 * float(len(v.mandatory));
+    if base > 0.97 {
+        base = 0.97;
     }
-    if sprays >= 3 {
-        stages[2] = 1;
-    }
-    if sprays >= 3 and logins_ok >= 1 and token_issued >= 1 {
-        stages[3] = 1;
-    }
-    if len(lists_ok) >= 3 {
-        gaps = [];
-        i = 1;
-        while i < len(lists_ok) {
-            gaps.append(lists_ok[i]["ts_ms"] - lists_ok[i - 1]["ts_ms"]);
-            i += 1;
-        }
-        fast = 0;
-        for g in gaps {
-            if g <= 5000 {
-                fast += 1;
-            }
-        }
-        if fast >= 2 {
-            stages[4] = 1;
-        }
-    }
-    if authz_denies >= 2 {
-        stages[5] = 1;
-    }
-    i = 1;
-    while i < n {
-        prev = obs[i - 1];
-        cur = obs[i];
-        if (prev["outcome"] == "deny" and (cur["ts_ms"] - prev["ts_ms"]) <= 1000
-                and cur["endpoint_class"] != prev["endpoint_class"]) {
-            stages[6] = 1;
-        }
-        i += 1;
-    }
-    for s in sorted(list(sess_ip.keys())) {
-        if len(sess_ip[s]) >= 2 {
-            stages[7] = 1;
-        }
-    }
-    return sorted(list(stages.keys()));
+    return float(int(base * 10000.0)) / 10000.0;
 }
