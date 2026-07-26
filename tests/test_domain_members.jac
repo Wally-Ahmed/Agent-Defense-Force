@@ -171,35 +171,25 @@ test "a Globex session cannot touch an Acme membership" {
     assert r["error"]["code"] == "TENANT_MISMATCH";
 }
 
-# ---------------------------------------------------------------------- SEAM
-# guard() resolves a `member` target through
-# app/model/resolve.membership_of(tenant, target_id), which matches on
-# PRINCIPAL_ID. The public API addresses a membership by MEMBERSHIP_ID
-# (contracts/app_api.openapi.yaml: PATCH /tenants/{tenant_id}/members/{membership_id}).
-# The two walkers below therefore pass a membership_id that guard() cannot
-# resolve, and guard() denies NOT_FOUND before the walker's own logic runs.
+# --------------------------------------------------------------------------
+# Addressing a membership BY MEMBERSHIP_ID -- the id the public API uses
+# (contracts/app_api.openapi.yaml: PATCH and DELETE
+# /tenants/{tenant_id}/members/{membership_id}).
 #
-# This is FAIL-CLOSED -- nothing is granted that should not be -- but it makes
-# ChangeMemberRole and RemoveMember unusable end to end.
+# guard() used to resolve a `member` target through
+# app/model/resolve.membership_of(), which matches on PRINCIPAL_ID -- a
+# different question, and the one guard() asks at STEP 4 to establish the
+# ACTOR's role. Every membership_id was therefore unresolvable and both walkers
+# below were denied NOT_FOUND before their own logic ran: fail-closed, but
+# unusable end to end. resolve_in_tenant's "member" branch now goes through
+# membership_in(), which walks the SAME Tenant --HasMember--> edge and matches
+# on membership_id.
 #
-# THE FIX, one function in app/model/resolve.jac (the security track's file):
-#
-#     def:pub membership_in(tenant: Tenant, membership_id: str) -> Membership | None {
-#         for m in [tenant->:HasMember:->][?:Membership] {
-#             if m.membership_id == membership_id { return m; }
-#         }
-#         return None;
-#     }
-#
-# and route `resolve_in_tenant`'s "member" branch through it. It stays inside
-# the same Tenant --HasMember--> traversal, so it cannot reach another tenant's
-# membership and the isolation guarantee is untouched.
-#
-# Asserted at CURRENT behaviour on purpose: applying the fix turns these two
-# cases red and forces them to be rewritten as the success paths they should be.
+# The two cases here run in definition order and mutate the roster, so the
+# roster check at the end of this file asserts the RESULTING state.
 # --------------------------------------------------------------------------
 
-test "SEAM -- an admin role change is denied NOT_FOUND by guard's member lookup" {
+test "an admin changes a member's role by membership_id" {
     mark = audit_count();
     w = ChangeMemberRole(
         ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/members/m_member", "PATCH"),
@@ -207,29 +197,73 @@ test "SEAM -- an admin role change is denied NOT_FOUND by guard's member lookup"
     ) spawn root;
     r = only_report(w);
     print("ROLE CHANGE (admin, valid membership_id) ->", r);
-    assert r["ok"] == False,
-        "resolve.jac now resolves a member by membership_id -- rewrite this as the success path";
-    assert r["error"]["code"] == "NOT_FOUND";
+    assert r["ok"] == True;
+    assert r["status"] == 200;
+    assert data_of(r)["membership_id"] == "m_member";
+    assert data_of(r)["role"] == "admin";
+    # The membership_id addressed the row; the principal it identifies is
+    # reported back, and is the one that membership always belonged to.
+    assert data_of(r)["user_id"] == "u_member";
     ev = only_event(mark);
     print("  audit:", ev);
     assert ev["action"] == "member.role_change";
-    assert ev["outcome"] == "deny";
-    assert ev["reason"] == "NOT_FOUND";
+    assert ev["outcome"] == "allow";
+    assert ev["target_id"] == "m_member";
 }
 
-test "SEAM -- and so is a removal, by the identical lookup" {
+test "an admin removes a member by membership_id" {
+    mark = audit_count();
     w = RemoveMember(
         ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/members/m_viewer", "DELETE"),
         tenant_id="t_acme", membership_id="m_viewer"
     ) spawn root;
     r = only_report(w);
     print("REMOVE (admin, valid membership_id) ->", r);
-    assert r["ok"] == False,
-        "resolve.jac now resolves a member by membership_id -- rewrite this as the success path";
-    assert r["error"]["code"] == "NOT_FOUND";
+    assert r["ok"] == True;
+    assert r["status"] == 200;
+    assert data_of(r)["membership_id"] == "m_viewer";
+    ev = only_event(mark);
+    print("  audit:", ev);
+    assert ev["action"] == "member.remove";
+    assert ev["outcome"] == "allow";
 }
 
-test "the roster is unchanged by every denied attempt above" {
+test "a membership_id from another tenant is UNREACHABLE, not rejected" {
+    # `m_globex` is a real, live membership -- in Globex. An Acme admin naming
+    # it must not be able to tell it apart from an id that was never issued to
+    # anyone, because membership_in() walks out from the ACME tenant node and
+    # simply never visits it. Isolation by which edges exist, not by a
+    # comparison someone has to remember to write.
+    foreign = ChangeMemberRole(
+        ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/members/m_globex", "PATCH"),
+        tenant_id="t_acme", membership_id="m_globex", role="admin"
+    ) spawn root;
+    invented = ChangeMemberRole(
+        ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/members/m_never_issued", "PATCH"),
+        tenant_id="t_acme", membership_id="m_never_issued", role="admin"
+    ) spawn root;
+    a = only_report(foreign);
+    b = only_report(invented);
+    print("FOREIGN membership_id  ->", a);
+    print("INVENTED membership_id ->", b);
+    assert a["ok"] == False;
+    assert a["error"]["code"] == "NOT_FOUND";
+    assert a["status"] == 404;
+    # Byte-identical. Any difference at all would be a membership-enumeration
+    # oracle across the tenant boundary.
+    assert a == b;
+
+    # And the Globex membership is untouched -- the walk never reached it.
+    gx = ListMembers(
+        ctx=ctx_for("s_globex", "/api/v1/tenants/t_globex/members", "GET"),
+        tenant_id="t_globex", limit=100
+    ) spawn root;
+    gx_roles = [str(x["membership_id"]) + "=" + str(x["role"]) for x in items_of(only_report(gx))];
+    print("GLOBEX ROSTER:", gx_roles);
+    assert "m_globex=member" in gx_roles;
+}
+
+test "the roster reflects exactly the two changes above and nothing else" {
     w = ListMembers(
         ctx=ctx_for("s_admin", "/api/v1/tenants/t_acme/members", "GET"),
         tenant_id="t_acme", limit=100
@@ -237,7 +271,12 @@ test "the roster is unchanged by every denied attempt above" {
     rows = items_of(only_report(w));
     roles = sorted([str(x["membership_id"]) + "=" + str(x["role"]) for x in rows]);
     print("ROSTER AFTER:", roles);
-    assert "m_member=member" in roles;
-    assert "m_viewer=viewer" in roles;
+    # m_member was promoted, m_viewer was removed, nothing else moved.
+    assert "m_member=admin" in roles;
     assert "m_owner=owner" in roles;
+    assert "m_admin=admin" in roles;
+    assert len([x for x in roles if x.startswith("m_viewer")]) == 0,
+        "a removed membership must no longer be reachable in the roster";
+    # No membership from another tenant has appeared in Acme's roster.
+    assert len([x for x in roles if x.startswith("m_globex")]) == 0;
 }

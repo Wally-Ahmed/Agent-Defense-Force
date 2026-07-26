@@ -98,9 +98,10 @@ walker:priv ListMyTenants {
     can go with entry {
         # `tenant.read` is the only real action in the frozen vocabulary that
         # fits this read; there is no `tenant.list`. tenant_id is "" because
-        # there is no tenant in this path -- this is the one seam noted in the
-        # brief: guard() may deny an empty tenant_id for a non-tenantless
-        # action, and if it does, that denial is reported as-is.
+        # there is no tenant in this path, and that empty value is load-bearing:
+        # guard() skips its tenancy steps for a TENANTLESS_ACTIONS entry only
+        # when the request carries no tenant scope either, which is what keeps
+        # the same action fully checked on GET /tenants/{tenant_id} below.
         g = guard(ReqCtx(**self.ctx), "tenant.read", "tenant", "", "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {

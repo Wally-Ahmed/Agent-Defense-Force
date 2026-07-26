@@ -14,14 +14,14 @@
 # removal requires a password presented recently, not merely a live session --
 # checked with step_up_ok() right after the role floor, before resolution.
 #
-# KNOWN SEAM: app/model/resolve.membership_of(tenant, target_id) -- what
-# guard() uses to resolve a "member" target -- matches on PRINCIPAL_ID, while
-# ChangeMemberRole and RemoveMember address a membership by MEMBERSHIP_ID. So
-# guard(..., "member", tenant_id, self.membership_id) currently denies
-# NOT_FOUND for both of them, fail-closed. This file passes the
-# contract-correct target_id anyway (never ""), on the theory that a
-# fail-closed integration bug owned by another track is a better failure mode
-# than silently working around it here. See this file's report.
+# ADDRESSING A MEMBERSHIP: ChangeMemberRole and RemoveMember name it by
+# MEMBERSHIP_ID, as the contract does. guard() resolves that target through
+# app/model/resolve.membership_in(), which walks Tenant --HasMember--> and
+# matches on membership_id. (It used to go through membership_of(), which
+# matches on PRINCIPAL_ID -- a different question, and the one guard() asks at
+# its own step 4 to establish the ACTOR's role -- so every membership_id was
+# unresolvable and both walkers were denied NOT_FOUND. Fail-closed, but
+# unusable; fixed in resolve.jac, not worked around here.)
 #
 # Invite tokens: minted with secret() (app/services/ids.jac) and never
 # stored -- only sha256(token) ever touches the graph, in Invite.token_hash.
@@ -380,11 +380,9 @@ walker:priv ChangeMemberRole {
     has role: str = "";
 
     can go with entry {
-        # KNOWN SEAM (see this file's header and the report): guard()'s
-        # "member" resolution matches on principal_id, so this currently
-        # denies NOT_FOUND here rather than reaching the code below. Passed
-        # anyway, because the contract addresses a membership by
-        # membership_id and this walker must not paper over that with "".
+        # The membership_id is the contract's address for this row and is
+        # passed to guard() as the target (never ""), so guard() resolves it by
+        # traversal from the tenant and audits the row that was actually named.
         g = guard(ReqCtx(**self.ctx), "member.role_change", "member", self.tenant_id, self.membership_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
@@ -461,7 +459,7 @@ walker:priv RemoveMember {
     has membership_id: str = "";
 
     can go with entry {
-        # Same KNOWN SEAM as ChangeMemberRole -- see this file's header.
+        # Addressed by membership_id, exactly as ChangeMemberRole is.
         g = guard(ReqCtx(**self.ctx), "member.remove", "member", self.tenant_id, self.membership_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {

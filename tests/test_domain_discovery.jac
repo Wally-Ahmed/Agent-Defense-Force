@@ -25,6 +25,10 @@ import from app.services.discovery {
     SearchTenant, RequestExport, DownloadExport, IntegrationCall
 }
 import from app.services.tenants { ListMyTenants, CreateTenant, ReadTenant }
+import from typing { cast }
+import from app.model.graph { Principal, Session, Authenticates }
+import from app.model.resolve { principal_by_id }
+import from app.security.clock { now_ms }
 
 glob:pub W: dict = world();
 glob:pub MADE: dict = {};
@@ -245,36 +249,81 @@ test "a Globex session cannot read the Acme tenant record" {
     assert r["error"]["code"] == "TENANT_MISMATCH";
 }
 
-# ---------------------------------------------------------------------- SEAM
-# `GET /tenants` is the one endpoint in the contract with no tenant in its path
-# -- it is how a caller discovers which tenants exist FOR THEM. Its audit action
-# is `tenant.read` (contracts/app_api.md note C), and guard() treats
-# `tenant.read` as a tenant-scoped action, so an empty `tenant_id` fails the
-# STEP 4 tenant lookup and denies NOT_FOUND before the walker runs.
+# --------------------------------------------------------------------------
+# `GET /tenants` -- the one endpoint in the contract with no tenant in its path.
+# It is how a caller discovers which tenants exist FOR THEM, so it has to work
+# before any tenant scope exists. Its audit action is `tenant.read`
+# (contracts/app_api.md note C), which guard() used to treat as unconditionally
+# tenant-scoped -- an empty tenant_id failed the STEP 4 lookup and the endpoint
+# could never succeed.
 #
-# Fail-closed, and no data is at risk -- the endpoint simply cannot succeed.
-#
-# THE FIX is one entry in app/security/roles.jac (the security track's file):
-# `TENANTLESS_ACTIONS` currently holds only "tenant.create". `ListMyTenants`
-# needs the same treatment -- guard() still demands a verified ctx, a live
-# credential and a clean control check for it, and skips only the membership and
-# role steps, exactly as it already does for tenant creation. The walker itself
-# already resolves nothing by id: `tenants_for(principal_id)` projects the
-# caller's OWN active memberships, so a tenant with no membership edge for them
-# never appears.
-#
-# Pinned at current behaviour so that widening TENANTLESS_ACTIONS turns this red.
+# `tenant.read` is now on TENANTLESS_ACTIONS, but guard() skips the tenancy
+# steps only when the REQUEST carries no tenant scope either (`tenant_id == ""`).
+# That second condition is what keeps the same action safe on
+# `GET /tenants/{tenant_id}`, which shares it -- the two cases below pin both
+# halves, and the Globex case above pins the half that must still be refused.
 # --------------------------------------------------------------------------
 
-test "SEAM -- GET /tenants cannot pass guard with an empty tenant_id" {
+"""A session for `principal_id` that is bound to NO tenant.
+
+Exactly the state of a session between password login and choosing a tenant:
+`tenant_id` is "". Built here rather than in tests/fixtures.jac because it is
+the specific precondition these two cases are about."""
+def scopeless_session(principal_id: str, session_id: str) -> str {
+    ts = now_ms();
+    who = cast(Principal, principal_by_id(principal_id));
+    who +>:Authenticates:+> Session(
+        session_id=session_id,
+        principal_id=principal_id,
+        tenant_id="",
+        ip_first="203.0.113.10",
+        fp="fp_test",
+        issued_at=ts,
+        expires_at=ts + 3600000,
+        last_auth_at=ts,
+        revoked=False
+    );
+    return session_id;
+}
+
+test "GET /tenants succeeds for a freshly-logged-in principal with no tenant scope" {
+    sid = scopeless_session("u_member", "s_scopeless");
+    mark = audit_count();
     w = ListMyTenants(
-        ctx=ctx_for("s_member", "/api/v1/tenants", "GET"), limit=50
+        ctx=ctx_for(sid, "/api/v1/tenants", "GET"), limit=50
     ) spawn root;
     r = only_report(w);
-    print("LIST MY TENANTS ->", r);
+    print("LIST MY TENANTS (no tenant scope) ->", r);
+    assert r["ok"] == True;
+    assert r["status"] == 200;
+    ids = sorted([str(i["tenant_id"]) for i in items_of(r)]);
+    print("  tenants ->", ids);
+    # The projection is the caller's OWN active memberships, so Acme appears and
+    # Globex -- where this principal holds nothing -- does not. Being tenantless
+    # widened which ENDPOINT is reachable, never which rows it returns.
+    assert "t_acme" in ids;
+    assert "t_globex" not in ids;
+    assert data_of(r)["total_visible"] == len(ids);
+    ev = only_event(mark);
+    print("  audit:", ev);
+    assert ev["action"] == "tenant.read";
+    assert ev["outcome"] == "allow";
+    assert ev["tenant_id"] == "";
+}
+
+test "the tenantless carve-out does NOT extend to GET /tenants/{tenant_id}" {
+    # Same action, same principal, same scopeless session -- but this request
+    # names a tenant, so guard() must run the tenancy steps in full. If the
+    # carve-out were keyed on the action alone, this would be allowed and any
+    # caller could read any tenant record by naming it.
+    sid = scopeless_session("u_member", "s_scopeless2");
+    r = only_report(ReadTenant(
+        ctx=ctx_for(sid, "/api/v1/tenants/t_globex", "GET"), tenant_id="t_globex"
+    ) spawn root);
+    print("READ TENANT (scopeless session -> globex) ->", r);
     assert r["ok"] == False,
-        "tenant.read is now tenantless -- rewrite this as the success path";
-    assert r["error"]["code"] == "NOT_FOUND";
+        "a tenantless action presented WITH a tenant_id must not skip steps 4-6";
+    assert r["error"]["code"] in ["TENANT_MISMATCH", "NOT_A_MEMBER"];
 }
 
 test "creating a tenant makes the creator its owner and nobody else" {

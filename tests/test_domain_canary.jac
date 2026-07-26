@@ -25,7 +25,9 @@ import re;
 import glob;
 
 import from tests.fixtures { world, ctx_for }
-import from tests.helpers { audit_count, only_event, only_report, data_of, items_of }
+import from tests.helpers {
+    audit_count, audit_since, summarize, only_event, only_report, data_of, items_of
+}
 import from app.services.projects { ReadProject, ListProjects, UpdateProject }
 import from app.services.sensitivity { floor_for, can_reach, SENSITIVITY_FLOOR }
 import from app.security.roles { ROLES }
@@ -58,23 +60,49 @@ test "a member is denied the canary project by ordinary authorization" {
     assert ev["target_sensitivity"] == "canary";
     assert ev["severity"] == "high";
 
-    # ------------------------------------------------------------------ SEAM
-    # guard() ALLOWS this request and the domain layer denies it, so the audit
-    # row reads `allow` for a request that returned 404. guard() resolves the
-    # target by traversal and records its sensitivity, but does not gate on it
-    # (app/security/authz.jac step 6); the floor lives in
-    # app/services/sensitivity.jac. Detection is unaffected -- the event still
-    # carries `target_sensitivity: canary` and still escalates to `high` -- but
-    # `outcome` misreports what the caller received.
+    # guard() itself makes this decision, at step 6, immediately after it
+    # resolves the record and reads its sensitivity -- so the row it emits says
+    # what the caller actually received. It used to say `allow`: the floor was
+    # applied one layer later, in app/services/, after guard() had already
+    # emitted. See the dedicated regression case below.
+    assert ev["outcome"] == "deny";
+    assert ev["reason"] == "NOT_FOUND";
+}
+
+test "a sensitivity denial emits exactly ONE audit event, and it reads deny" {
+    # THE REGRESSION CASE for the audit-integrity bug. guard() recorded
+    # `target_sensitivity` but did not gate on it, so the floor was first
+    # applied in the domain layer -- AFTER guard() had emitted `outcome: allow`
+    # for a request that was about to be refused. The trail said allow; the
+    # caller got 404. The incident graph's `denial_shape` scorer and the
+    # monitor's window features both key off `outcome`, so every such denial was
+    # invisible to detection.
     #
-    # The fix belongs in guard(), one condition at step 6: deny NOT_FOUND when
-    # `can_reach(membership.role, sensitivity_of(resolved))` is False. It is not
-    # applied here because app/security/ is another track's file.
-    #
-    # This assertion records the CURRENT seam so that closing it turns this test
-    # red and forces the line below to be updated rather than forgotten.
-    assert ev["outcome"] == "allow",
-        "guard() now gates on sensitivity -- flip this to `deny` and drop the SEAM note";
+    # Run over the confidential record as well as the canary, because this is a
+    # property of the FLOOR, not of the canary -- if it only held for one of
+    # them, the canary would be distinguishable.
+    for pid in ["pr_conf", "pr_canary"] {
+        mark = audit_count();
+        w = ReadProject(
+            ctx=ctx_for("s_member", "/api/v1/tenants/t_acme/projects/" + pid, "GET"),
+            tenant_id="t_acme", project_id=pid
+        ) spawn root;
+        r = only_report(w);
+        evs = [summarize(e) for e in audit_since(mark)];
+        print(f"  {pid}: {len(evs)} event(s) ->", evs);
+        assert r["ok"] == False;
+        assert r["status"] == 404;
+        # Exactly one: not the two a second emission in the domain layer would
+        # produce, and not the zero a skipped guard() would.
+        assert len(evs) == 1,
+            f"expected exactly 1 audit event for {pid}, got {len(evs)}: {evs}";
+        assert evs[0]["outcome"] == "deny";
+        assert evs[0]["reason"] == "NOT_FOUND";
+        assert evs[0]["target_sensitivity"] == pid.replace("pr_", "").replace("conf", "confidential");
+        # And no event anywhere in this request's trail reads `allow`.
+        assert len([e for e in evs if e["outcome"] == "allow"]) == 0,
+            f"a sensitivity denial is still being logged as an allow: {evs}";
+    }
 }
 
 test "an admin reaches the canary project -- the floor is a floor, not a wall" {

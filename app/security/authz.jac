@@ -19,7 +19,8 @@
 #   3. containment        -- Control rows the responder has written
 #   4. membership         -- an active Membership in the target tenant
 #   5. role               -- rank >= the action's requirement
-#   6. resolution         -- by traversal from that tenant, never by global id
+#   6. resolution         -- by traversal from that tenant, never by global id,
+#                            then rank >= the resolved record's sensitivity floor
 #   7. audit              -- exactly one AuditEvent, allow or deny
 #
 # Step 7 is not optional and has no bypass parameter. Every `return` in this
@@ -46,6 +47,10 @@ import from app.security.roles {
     requires_stepup, TENANTLESS_ACTIONS, MEMBERSHIP_EXEMPT_ACTIONS
 }
 import from app.security.audit { emit_audit }
+# The floor table lives in app/services/sensitivity.jac and is imported, never
+# restated. One definition of "confidential and canary both require admin" in
+# the codebase, read from both sides of the boundary.
+import from app.services.sensitivity { effective_required }
 
 # --------------------------------------------------------------------------
 # Actions whose blast radius guard() MEASURES rather than trusts.
@@ -440,9 +445,9 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     }
 
     # ----------------------------------------------------------------------
-    # STEP 6 -- resolution BY TRAVERSAL from this tenant. A valid id belonging
-    # to another tenant is not rejected here; it is never reached. See
-    # app/model/resolve.jac.
+    # STEP 6 -- resolution BY TRAVERSAL from this tenant, then the per-record
+    # sensitivity floor. A valid id belonging to another tenant is not rejected
+    # here; it is never reached. See app/model/resolve.jac.
     # ----------------------------------------------------------------------
     resolved: object = None;
     if target_id != "" and target_kind in TRAVERSED_KINDS {
@@ -453,6 +458,59 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
         }
         base["target_sensitivity"] = sensitivity_of(resolved);
         base["parent_id"] = getattr(resolved, "project_id", "") or getattr(resolved, "task_id", "");
+
+        # ------------------------------------------------------------------
+        # The sensitivity floor. Step 5 asked whether the caller's role clears
+        # the ACTION's baseline; this asks whether it clears the RECORD's, which
+        # is only knowable once the record has been resolved -- hence here and
+        # not there.
+        #
+        # WHY IT HAS TO BE IN guard(). The domain layer applies the same floor
+        # (app/services/scope.jac, and every ‡ rule in app/services/) and still
+        # does -- defence in depth. But it applies it AFTER guard() has already
+        # returned, so guard() was emitting `outcome: allow` for requests that
+        # the caller was then denied. That is not untidiness: the incident
+        # graph's `denial_shape` scorer and the monitor's window features both
+        # read `outcome`, so a denial recorded as an allow is a denial detection
+        # cannot see -- it silently erodes the exact signal the campaign is
+        # caught by, and it makes the audit trail a false statement about what
+        # happened. The decision has to be made where the emission is made.
+        #
+        # The requirement is max(action baseline, floor(sensitivity)), taken
+        # from app/services/sensitivity.effective_required -- the one floor
+        # table in the codebase. No mapping is restated here, and nothing in
+        # this block names a sensitivity value: `confidential` and `canary` are
+        # the same row of that table and take the same path through this
+        # comparison, which is what makes a canary an ordinary record.
+        #
+        # THE REASON IS `NOT_FOUND`, DELIBERATELY, and this is a masking rule
+        # rather than a role complaint. contracts/app_api.openapi.yaml is
+        # explicit for readProject -- "A project above the caller's sensitivity
+        # ceiling yields the same 404" -- and does not list INSUFFICIENT_ROLE
+        # among the deny reasons readProject/readTask/readComment/list*/search
+        # may return at all. contracts/vocab.md defines the code to cover
+        # exactly this case: "Target does not exist, OR IS MASKED AS
+        # NON-EXISTENT". Answering 403 would confirm that an id the caller may
+        # not read nevertheless exists, which is a record-enumeration oracle and
+        # would make the canary distinguishable from an ordinary record by its
+        # status code alone. Step 4 masks an invisible tenant the same way, for
+        # the same reason. `target_sensitivity` and the `high` severity it
+        # earns are still on the event, so the responder sees precisely which
+        # record was reached for -- the masking is of the ANSWER, never of the
+        # record.
+        #
+        # Only when a membership was established: MEMBERSHIP_EXEMPT_ACTIONS
+        # (member.accept) have no role to compare, and applying a floor to
+        # `none` would deny the one flow whose purpose is to create the
+        # membership in the first place.
+        if membership is not None {
+            held_role: str = cast(Membership, membership).role;
+            required = effective_required(min_role_for(action), base["target_sensitivity"]);
+            if not role_satisfies(held_role, required) {
+                return _decide(base, False, "NOT_FOUND",
+                               tenant=tenant, principal=actor, membership=membership);
+            }
+        }
     }
 
     # Measured egress, for the actions whose blast radius is a collection.
