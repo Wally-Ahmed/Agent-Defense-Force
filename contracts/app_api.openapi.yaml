@@ -1,0 +1,1918 @@
+# Northwind Projects — frozen HTTP API contract
+#
+# FROZEN 2026-07-26. Two downstream tracks (deterministic attack driver, benign load
+# generator) build against this file before the application exists. Breaking changes
+# require re-notifying both tracks.
+#
+# This document describes the PUBLIC surface: the gateway on http://127.0.0.1:8080.
+# The INTERNAL surface (POST /walker/<WalkerName> on the Jac 0.13.5 upstream) is fully
+# specified under the root extension `x-northwind-internal-surface`, and each public
+# operation names its walker via `x-jac-walker`. The complete
+# public -> walker -> role -> audit-action table is machine-readable at the root
+# extension `x-northwind-mapping`.
+
+openapi: 3.1.1
+
+info:
+  title: Northwind Projects API
+  version: 1.0.0
+  summary: Multi-tenant project-management SaaS. Gateway-fronted, Jac-backed.
+  description: |
+    Northwind Projects is an ordinary, competently secured multi-tenant project-management
+    SaaS. Tenants in the sandbox fixture are `t_acme`, `t_globex`, `t_initech`.
+
+    ## Two-layer architecture
+
+    1. **Public surface (this document).** A gateway on `http://127.0.0.1:8080` terminates
+       TLS-equivalent cookie handling, CSRF, CORS, rate limiting, and containment feature
+       flags. It authenticates the caller, resolves the tenant membership, builds a trusted
+       `ctx` object, and proxies to the Jac upstream.
+    2. **Internal surface.** `jac start` on the Jac 0.13.5 upstream auto-exposes every
+       walker as `POST /walker/<WalkerName>`. The upstream binds loopback only and accepts
+       requests **only** from the gateway, authenticated by a short-lived ES256 JWT. See
+       `x-northwind-internal-surface`.
+
+    ## Authorization model
+
+    Roles are `owner > admin > member > viewer` and are held on a **Membership**, which is
+    per `(user, tenant)`. There is no global role on a user. A principal with no Membership
+    in the addressed tenant is not authorized for anything in that tenant.
+
+    Every mutating operation requires **both** (a) an authenticated principal and (b) a
+    server-side authorization check performed inside the walker against the Membership node
+    read from the graph. `ctx.tenant.role` is transport only — no walker uses it as the
+    authorization decision. Each operation below states its check in `x-authz`.
+
+    ## Tenant-scoped addressing
+
+    No resource is addressable by global id. Every resource path is rooted at
+    `/tenants/{tenant_id}/...` and resolution walks the tenant subtree
+    (`Tenant -> Project -> Task -> Comment`). A foreign id is therefore **unreachable by
+    traversal**, not merely rejected: the traversal simply never reaches it and the result
+    is an ordinary `404 NOT_FOUND`, indistinguishable from an id that does not exist at all.
+
+    ## Decision order
+
+    The gateway and walker evaluate failure modes in the fixed order given by
+    `x-northwind-decision-order`. Two consequences matter for callers:
+
+    - **Role check precedes resource resolution.** A principal whose role is below the
+      verb's requirement receives `403 INSUFFICIENT_ROLE` for *every* id, existent or not,
+      so an under-privileged caller learns nothing about existence.
+    - **Sensitivity gating happens during resolution.** A record above the caller's
+      sensitivity ceiling is simply not reachable, yielding `404 NOT_FOUND`.
+
+    ## Sensitivity and the canary
+
+    Projects, tasks and attachments carry `sensitivity: normal | confidential | canary`.
+    A record is reachable only if the caller's role rank meets the floor for that
+    sensitivity: `normal` -> viewer, `confidential` -> admin, `canary` -> admin. A task's
+    effective sensitivity is `max(project.sensitivity, task.sensitivity)`; an attachment's
+    is `max(task.effective, attachment.sensitivity)`.
+
+    **The canary is not a trap.** `canary` and `confidential` are handled by the identical
+    authorization code path with the identical floor. The application contains no branch on
+    `sensitivity == "canary"`, emits no special event for it, and does not alter any
+    response for it. The distinct enum value exists solely so that the fixture generator and
+    the *external* monitor can identify which record it seeded. A low-privilege member is
+    denied a canary record by ordinary authorization, exactly as they are denied any other
+    confidential record. Removing the `canary` value from the enum would not change a single
+    authorization outcome.
+
+    ## No bypass
+
+    There is no administrative bypass, no debug endpoint, no maintenance route, no
+    hard-coded credential, and no header, query parameter, or body field that relaxes
+    authorization. Every endpoint in this document is subject to the same decision order.
+    The compromised synthetic identity used by the attack track is an ordinary API token
+    issued to an ordinary low-privilege service-account membership; it is part of the
+    fixture, not a product of any application weakness, and it can reach exactly what its
+    Membership permits.
+  contact:
+    name: Northwind Projects platform
+    url: https://app.northwind.example/support
+  license:
+    name: Proprietary (sandbox fixture)
+    identifier: LicenseRef-northwind-sandbox
+
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+    description: Gateway (public surface). The only surface a client or attacker can reach.
+
+tags:
+  - name: auth
+    description: Registration, login, logout, session lifecycle, step-up reauthentication.
+  - name: tenants
+    description: Tenant records and membership management.
+  - name: projects
+    description: Projects within a tenant.
+  - name: tasks
+    description: Tasks within a project.
+  - name: comments
+    description: Comments on a task.
+  - name: search
+    description: Tenant-scoped search across projects, tasks and comments.
+  - name: exports
+    description: Asynchronous tenant data export jobs.
+  - name: integrations
+    description: Service-to-service integration dispatch. Lateral-movement surface.
+
+security:
+  - sessionCookie: []
+  - apiToken: []
+
+# ---------------------------------------------------------------------------
+# Root extensions: the parts the attack driver and load generator consume.
+# ---------------------------------------------------------------------------
+
+x-northwind-deny-reasons:
+  description: >-
+    Closed set of deny reason codes. `error.code` in every non-2xx body is one of these,
+    and the HTTP status is exactly the one paired here. The attack driver asserts on both.
+  codes:
+    NO_SESSION:
+      status: 401
+      meaning: >-
+        No valid credential was presented, or a login attempt did not establish one.
+        Deliberately also used for failed authentication on POST /auth/login so that the
+        response is identical whether or not the account exists.
+    SESSION_EXPIRED:
+      status: 401
+      meaning: Session cookie past its idle (30m) or absolute (12h) lifetime.
+    TOKEN_REVOKED:
+      status: 401
+      meaning: Session or API token appears in the revocation list (containment action).
+    REAUTH_REQUIRED:
+      status: 401
+      meaning: >-
+        Step-up required. Emitted when a sensitive operation is attempted with
+        `auth_age_s > 900`, when containment has set `require_reauth` on the identity, or
+        when POST /auth/reauth is presented with an incorrect password.
+    NOT_A_MEMBER:
+      status: 403
+      meaning: >-
+        The principal holds no Membership in the addressed tenant. Tenant slugs are not
+        secret, so this is disclosed rather than masked as 404.
+    INSUFFICIENT_ROLE:
+      status: 403
+      meaning: >-
+        A Membership exists but its role rank is below the verb's requirement. Returned
+        before any resource resolution, so it discloses nothing about the target id.
+    TENANT_MISMATCH:
+      status: 403
+      meaning: >-
+        The presented credential is bound to exactly one tenant and the path addresses a
+        different one. Applies to API tokens and to invite tokens. This is the canonical
+        lateral-movement signal.
+    NOT_FOUND:
+      status: 404
+      meaning: >-
+        The addressed tenant does not exist, or the target id is not reachable by traversal
+        of the tenant subtree at the caller's sensitivity ceiling. Indistinguishable from a
+        nonexistent id by design.
+    VALIDATION_FAILED:
+      status: 422
+      meaning: >-
+        Request body, query or cursor failed schema or semantic validation. Also returned
+        for an `Idempotency-Key` replayed with a different body, and for a pagination cursor
+        that is expired or not bound to this tenant, endpoint and filter set.
+    RATE_LIMITED:
+      status: 429
+      meaning: Per-identity, per-source or per-tenant budget exceeded. Carries `Retry-After`.
+    CSRF_INVALID:
+      status: 403
+      meaning: >-
+        A cookie-authenticated non-GET request had a missing, malformed or mismatched
+        double-submit pair. Not applicable to Bearer API token requests.
+    SUSPENDED:
+      status: 403
+      meaning: >-
+        The authenticated principal's user account or Membership is suspended (containment
+        action). Existing credentials still authenticate; every operation is refused.
+    SOURCE_BLOCKED:
+      status: 403
+      meaning: >-
+        The request source is on the containment blocklist. Evaluated first, before
+        authentication, on every endpoint including the unauthenticated ones.
+    READONLY_MODE:
+      status: 423
+      meaning: >-
+        The targeted feature is flag-switched to read-only (containment action). Applies to
+        non-GET requests on that feature only; GETs continue to succeed.
+
+x-northwind-decision-order:
+  description: >-
+    Fixed evaluation order. The first condition that fails determines the response. The
+    attack driver relies on this order to predict which of several simultaneously-true
+    failures is reported.
+  order:
+    - {step: 1, check: source blocklist, deny: SOURCE_BLOCKED, layer: gateway}
+    - {step: 2, check: rate limit budget, deny: RATE_LIMITED, layer: gateway}
+    - {step: 3, check: credential present and well-formed, deny: NO_SESSION, layer: gateway}
+    - {step: 4, check: credential not expired, deny: SESSION_EXPIRED, layer: gateway}
+    - {step: 5, check: credential not revoked, deny: TOKEN_REVOKED, layer: gateway}
+    - {step: 6, check: step-up freshness for sensitive operations, deny: REAUTH_REQUIRED, layer: gateway}
+    - {step: 7, check: CSRF double-submit on cookie-authenticated non-GET, deny: CSRF_INVALID, layer: gateway}
+    - {step: 8, check: principal not suspended, deny: SUSPENDED, layer: gateway}
+    - {step: 9, check: feature not read-only for mutating requests, deny: READONLY_MODE, layer: gateway}
+    - {step: 10, check: credential tenant binding matches path tenant, deny: TENANT_MISMATCH, layer: gateway}
+    - {step: 11, check: path tenant exists, deny: NOT_FOUND, layer: walker}
+    - {step: 12, check: Membership exists in path tenant, deny: NOT_A_MEMBER, layer: walker}
+    - {step: 13, check: Membership role rank meets verb requirement, deny: INSUFFICIENT_ROLE, layer: walker}
+    - {step: 14, check: target reachable by tenant-subtree traversal within sensitivity ceiling, deny: NOT_FOUND, layer: walker}
+    - {step: 15, check: body and semantic validation, deny: VALIDATION_FAILED, layer: walker}
+
+x-northwind-audit:
+  description: >-
+    Audit emission rules. Every mapped request emits exactly one PRIMARY event, whose
+    action is the `x-audit-action` of the operation, carrying
+    `outcome: allowed | denied` and `deny_reason` when denied. A small number of operations
+    additionally emit a SECONDARY event. Secondary events carry `secondary: true`.
+  primary_rule: >-
+    One primary event per request, action = operation's x-audit-action,
+    outcome = allowed on 2xx, denied otherwise.
+  overrides:
+    - operation: POST /auth/login
+      rule: >-
+        Emits `auth.login` with outcome=allowed on success, and `auth.login_failed` with
+        outcome=denied INSTEAD OF `auth.login` on any authentication failure.
+    - operation: POST /auth/logout
+      rule: Emits `auth.logout` (primary) and `auth.token_revoked` (secondary) on success.
+    - operation: POST /auth/refresh
+      rule: >-
+        Emits `auth.token_issued` (primary) plus `auth.token_revoked` (secondary, the
+        rotated-out session) on success. On an expired session emits `auth.session_expired`
+        instead of the primary.
+    - operation: POST /auth/reauth
+      rule: Emits `auth.reauth_required` (primary) plus `auth.token_issued` (secondary) on success.
+    - operation: GET /auth/session
+      rule: >-
+        AMBIGUOUS BY CONSTRUCTION. The closed action vocabulary has no read-your-own-session
+        action, so this operation emits NO primary event on 200. On 401 SESSION_EXPIRED it
+        emits `auth.session_expired` under the secondary rule below.
+  secondary_rules:
+    - trigger: any response with deny_reason SESSION_EXPIRED
+      emits: auth.session_expired
+    - trigger: any response with deny_reason REAUTH_REQUIRED
+      emits: auth.reauth_required
+    - trigger: any response with deny_reason TOKEN_REVOKED
+      emits: auth.token_revoked
+  actions:
+    - auth.register
+    - auth.login
+    - auth.login_failed
+    - auth.logout
+    - auth.session_expired
+    - auth.token_issued
+    - auth.token_revoked
+    - auth.reauth_required
+    - tenant.create
+    - tenant.read
+    - member.invite
+    - member.accept
+    - member.role_change
+    - member.remove
+    - project.create
+    - project.read
+    - project.list
+    - project.update
+    - project.delete
+    - task.create
+    - task.read
+    - task.list
+    - task.update
+    - task.delete
+    - task.assign
+    - comment.create
+    - comment.read
+    - comment.list
+    - comment.delete
+    - export.request
+    - export.download
+    - search.query
+    - integration.call
+
+x-northwind-gateway:
+  base_url: http://127.0.0.1:8080
+  path_prefix: /api/v1
+  session_cookie:
+    name: __Host-sid
+    attributes: HttpOnly; Secure; SameSite=Lax; Path=/
+    no_domain_attribute: true
+    opaque: true
+    idle_lifetime_s: 1800
+    absolute_lifetime_s: 43200
+    rotated_on: [login, refresh, reauth]
+  csrf:
+    scheme: double-submit
+    cookie: __Host-csrf
+    cookie_attributes: Secure; SameSite=Lax; Path=/
+    http_only: false
+    header: X-CSRF-Token
+    comparison: constant-time
+    required_on: >-
+      Every non-GET request authenticated by cookie, including POST /auth/login and
+      POST /auth/register. The gateway issues a pre-session __Host-csrf cookie to anonymous
+      callers on any GET so that login itself is CSRF-protected.
+    not_required_on: Requests authenticated by Authorization: Bearer (no ambient authority).
+  bearer_tokens:
+    header: "Authorization: Bearer <api_token>"
+    format: "nwp_<43 chars base62>"
+    storage: argon2id hash, never stored or logged in clear
+    binding: exactly one tenant and one service-account Membership
+    scopes: [projects:read, tasks:read, tasks:write, comments:write, search:read, integration:call]
+    never_accepted_on: [POST /auth/login, POST /auth/register, POST /auth/refresh, POST /auth/reauth]
+    query_string_accepted: false
+  step_up:
+    max_auth_age_s: 900
+    required_on:
+      - PATCH /tenants/{tenant_id}/members/{membership_id}
+      - DELETE /tenants/{tenant_id}/members/{membership_id}
+      - POST /tenants/{tenant_id}/exports
+      - GET /tenants/{tenant_id}/exports/{export_id}
+      - POST /tenants/{tenant_id}/integrations/call
+    also_required_when: containment has set require_reauth on the identity
+    not_applicable_to: >-
+      Bearer API token principals. They have no interactive session to refresh; containment
+      revokes them instead, yielding TOKEN_REVOKED.
+  source_resolution:
+    peer_address: connection peer address
+    x_forwarded_for: >-
+      Honoured only when the peer is inside TRUSTED_PROXY_CIDRS, in which case the last hop
+      is used. Ignored entirely from untrusted peers.
+    x_northwind_source_id: >-
+      Sandbox provenance header. Recorded into audit events only. It has ZERO effect on
+      authorization and ZERO effect on rate-limit bucketing; rotating it grants nothing.
+  rate_limits:
+    - {scope: "POST /auth/login", budget: 5 per 900s per (source_ip, email_hash)}
+    - {scope: "POST /auth/login", budget: 20 per 900s per source_ip}
+    - {scope: "POST /auth/register", budget: 3 per 3600s per source_ip}
+    - {scope: read and list and search, budget: 600 per 60s per identity}
+    - {scope: read and list and search, budget: 1200 per 60s per source_ip}
+    - {scope: mutations, budget: 120 per 60s per identity}
+    - {scope: "POST /tenants/{tenant_id}/exports", budget: 5 per 3600s per tenant}
+    - {scope: "POST /tenants/{tenant_id}/integrations/call", budget: 60 per 60s per api_token}
+  cors:
+    allowed_origins: [https://app.northwind.example]
+    allow_credentials: true
+    allow_methods: [GET, POST, PATCH, DELETE, OPTIONS]
+    allow_headers: [Content-Type, X-CSRF-Token, Idempotency-Key, X-Northwind-Source-Id]
+    expose_headers: [X-Request-Id, Retry-After, X-RateLimit-Remaining]
+    max_age_s: 600
+    wildcard_origin: false
+  response_headers:
+    Strict-Transport-Security: max-age=31536000; includeSubDomains
+    Content-Security-Policy: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    X-Content-Type-Options: nosniff
+    Referrer-Policy: no-referrer
+    Cross-Origin-Opener-Policy: same-origin
+    Cache-Control: "no-store on every authenticated response"
+    X-Request-Id: echoed on every response, success or failure
+  pagination:
+    limit_default: 25
+    limit_min: 1
+    limit_max: 100
+    cursor: >-
+      Opaque base64url, HMAC-signed, bound to (tenant_id, endpoint, filter set) and valid
+      for 900s. A cursor presented on a different tenant, endpoint or filter set, or after
+      expiry, yields 422 VALIDATION_FAILED. Enumeration is possible within these rules; that
+      is intentional, and detection is the monitor's job, not the gateway's.
+
+x-northwind-internal-surface:
+  description: >-
+    What the gateway proxies to. Not reachable by any client: the upstream binds loopback
+    only and rejects any request lacking a valid gateway JWT.
+  base_url: http://127.0.0.1:8000
+  runtime: Jac 0.13.5, started with `jac start app.jac --port 8000 --host 127.0.0.1`
+  endpoint_form: POST /walker/<WalkerName>
+  request_body: >-
+    The walker's `has` fields as a flat JSON object, plus the injected `ctx` object. Every
+    public request field named in this document maps 1:1 to a walker `has` field of the same
+    name; path parameters become `has` fields too (e.g. `tenant_id`, `project_id`).
+  response_body: >-
+    Jac appends each `report` to a `.reports` array. The upstream returns
+    `{"status": <int>, "reports": [<payload>]}`. The gateway unwraps `reports[0]` as the
+    public response body and maps `status` to the public HTTP status.
+  upstream_auth:
+    header: "Authorization: Bearer <gateway_jwt>"
+    alg: ES256
+    iss: northwind-gateway
+    aud: northwind-jac
+    ttl_s: 90
+    claims: [iss, aud, iat, exp, jti, ctx_hash]
+    ctx_integrity: >-
+      `ctx_hash` is sha256 over the canonical JSON encoding of the injected `ctx`. Every
+      walker verifies `sha256(canonical_json(ctx)) == jwt.ctx_hash` before reading any ctx
+      field, and rejects the request outright on mismatch. A forged ctx submitted directly
+      to the upstream therefore fails, and the upstream is not routable from outside
+      loopback in any case.
+  ctx_injection: >-
+    The gateway strips any client-supplied `ctx` field from the request body unconditionally
+    before injecting its own. A client cannot influence ctx by any means.
+  ctx_schema_ref: "#/components/schemas/Ctx"
+  authorization_note: >-
+    ctx carries `tenant.role` for transport and logging convenience only. Every walker
+    re-reads the Membership node from the graph and re-evaluates the role rank itself. No
+    authorization decision anywhere in the application is made from ctx.
+
+# ---------------------------------------------------------------------------
+# Public surface
+# ---------------------------------------------------------------------------
+
+paths:
+
+  # ------------------------------------------------------------------- auth --
+
+  "/auth/register":
+    post:
+      operationId: registerUser
+      tags: [auth]
+      summary: Create a user account.
+      description: |
+        Creates a user with no Membership anywhere. A freshly registered account can reach
+        nothing until it either creates a tenant or accepts an invite. No session is
+        established; the client must call `POST /auth/login` afterwards.
+
+        Passwords are hashed with argon2id (m=64MiB, t=3, p=1) and checked against a
+        breached-password list. The plaintext is never logged, echoed, or stored.
+
+        Disclosure note: a duplicate email returns `422 VALIDATION_FAILED` with
+        `details[0].field = "email"`. This is a deliberate, documented tradeoff — it is what
+        essentially every real SaaS signup does, and it is bounded by a 3-per-hour
+        per-source budget. The endpoint the attack track sprays (`POST /auth/login`)
+        discloses nothing.
+      security:
+        - csrfToken: []
+      x-jac-walker: RegisterUser
+      x-required-role: public
+      x-audit-action: auth.register
+      x-mutating: true
+      x-authz:
+        authentication: none
+        server_side_check: >-
+          No authorization subject exists yet, so there is nothing to authorize against. The
+          walker enforces email uniqueness, the password policy, and argon2id hashing, and
+          creates no Membership. This is the only mutating endpoint in the API without an
+          authenticated principal, and by construction it grants the caller no access to any
+          existing resource.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, CSRF_INVALID, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RegisterRequest"}
+      responses:
+        "201":
+          description: Account created.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UserSelf"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/auth/login":
+    post:
+      operationId: loginUser
+      tags: [auth]
+      summary: Authenticate and establish a session.
+      description: |
+        On success the gateway sets `__Host-sid` and a fresh `__Host-csrf`, rotating any
+        prior session id.
+
+        On failure the response is `401` with `error.code = "NO_SESSION"` and the fixed
+        message `Invalid email or password.` — byte-identical whether the account does not
+        exist, the password is wrong, or the account is suspended. The gateway runs an
+        argon2id verification against a dummy hash for unknown emails so that response
+        timing is uniform. This is the endpoint the password-spraying step of the attack
+        scenario targets; it is an oracle for nothing.
+
+        Rate limited to 5 attempts per 15 minutes per `(source_ip, email_hash)` and 20 per
+        15 minutes per `source_ip`. Exceeding either yields `429 RATE_LIMITED` with
+        `Retry-After`, again without disclosing account existence.
+      security:
+        - csrfToken: []
+      x-jac-walker: LoginUser
+      x-required-role: public
+      x-audit-action: auth.login
+      x-audit-action-on-failure: auth.login_failed
+      x-mutating: true
+      x-authz:
+        authentication: none
+        server_side_check: >-
+          The walker verifies the argon2id hash in constant time and, on success, mints an
+          opaque session bound to the user. It grants no tenant access of any kind; every
+          tenant-scoped endpoint re-derives the Membership independently.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, CSRF_INVALID, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginRequest"}
+      responses:
+        "200":
+          description: Authenticated. Session cookies set.
+          headers:
+            Set-Cookie: {$ref: "#/components/headers/SetCookieSession"}
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+        "401": {$ref: "#/components/responses/UnauthorizedLogin"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/auth/logout":
+    post:
+      operationId: logoutSession
+      tags: [auth]
+      summary: Revoke the current session.
+      description: >-
+        Revokes the presented session server-side and clears both cookies. Idempotent: a
+        second call with the now-revoked cookie returns `401 TOKEN_REVOKED`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: LogoutSession
+      x-required-role: authenticated
+      x-audit-action: auth.logout
+      x-audit-secondary: [auth.token_revoked]
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker revokes only the session identified by the presented credential, after
+          confirming it belongs to the authenticated principal. There is no parameter by
+          which another principal's session can be named.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID]
+      responses:
+        "200":
+          description: Session revoked. Cookies cleared.
+          headers:
+            Set-Cookie: {$ref: "#/components/headers/SetCookieCleared"}
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LogoutResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/auth/refresh":
+    post:
+      operationId: refreshSession
+      tags: [auth]
+      summary: Rotate the session and issue a fresh upstream token.
+      description: >-
+        Extends an unexpired session, rotating the session id and the CSRF token. Does not
+        reset `auth_age_s` — refreshing is not step-up. An expired session cannot be
+        refreshed; the client must log in again.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: RefreshSession
+      x-required-role: authenticated
+      x-audit-action: auth.token_issued
+      x-audit-secondary: [auth.token_revoked]
+      x-audit-action-on-expiry: auth.session_expired
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker rotates only the presented session after confirming it is unexpired,
+          unrevoked and owned by the authenticated principal, then revokes the prior session
+          id. Absolute lifetime is never extended past its original 12h ceiling.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED]
+      responses:
+        "200":
+          description: Session rotated.
+          headers:
+            Set-Cookie: {$ref: "#/components/headers/SetCookieSession"}
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SessionEnvelope"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/auth/reauth":
+    post:
+      operationId: reauthSession
+      tags: [auth]
+      summary: Step-up reauthentication.
+      description: >-
+        Re-presents the password on an existing session to reset `auth_age_s` to 0, which is
+        what the five step-up-gated operations require. An incorrect password returns
+        `401 REAUTH_REQUIRED` — the step-up is still outstanding. Rate limited as login is.
+        Not available to Bearer API token principals.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: ReauthSession
+      x-required-role: authenticated
+      x-audit-action: auth.reauth_required
+      x-audit-secondary: [auth.token_issued]
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker verifies the password against the authenticated principal's own
+          argon2id hash. It cannot be pointed at another principal, and success elevates
+          freshness only — it grants no role and no tenant access.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, CSRF_INVALID, SUSPENDED, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ReauthRequest"}
+      responses:
+        "200":
+          description: Step-up complete. auth_age_s reset to 0.
+          headers:
+            Set-Cookie: {$ref: "#/components/headers/SetCookieSession"}
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SessionEnvelope"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/auth/session":
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Describe the current session and its memberships.
+      description: >-
+        Returns the caller's own principal, session freshness, memberships, and the
+        containment flags the UI needs. Reveals nothing about any other principal. Emits no
+        audit event on 200 — see the `GET /auth/session` note in `x-northwind-audit`.
+      security:
+        - sessionCookie: []
+        - apiToken: []
+      x-jac-walker: GetSession
+      x-required-role: authenticated
+      x-audit-action: null
+      x-audit-note: >-
+        AMBIGUOUS. The closed action vocabulary contains no read-your-own-session action, so
+        no primary event is emitted on success. On 401 SESSION_EXPIRED the secondary rule
+        emits auth.session_expired.
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker projects only the authenticated principal's own record and its own
+          Memberships. There is no parameter that selects a different subject.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED]
+      responses:
+        "200":
+          description: Current session.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SessionInfo"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # ---------------------------------------------------------------- tenants --
+
+  "/tenants":
+    get:
+      operationId: listMyTenants
+      tags: [tenants]
+      summary: List the tenants the caller is a member of.
+      description: >-
+        Returns exactly the tenants in which the caller holds a Membership, with the
+        caller's own role on each. It is not a directory: a tenant the caller is not a
+        member of never appears, and there is no filter or flag that widens the set. A
+        Bearer API token principal sees only the single tenant it is bound to.
+      x-jac-walker: ListMyTenants
+      x-required-role: authenticated
+      x-audit-action: tenant.read
+      x-audit-note: >-
+        MILDLY AMBIGUOUS. The vocabulary has no `tenant.list`; `tenant.read` is used for all
+        three tenant-shaped reads (my tenants, one tenant, member roster).
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker traverses outward from the principal's own User node along Membership
+          edges. Tenants without such an edge are not reachable by the traversal.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paged list of the caller's tenants.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TenantList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    post:
+      operationId: createTenant
+      tags: [tenants]
+      summary: Create a tenant.
+      description: >-
+        Creates a tenant and an `owner` Membership for the caller. Limited to 3 per 24h per
+        user. Not available to Bearer API token principals, which are bound to an existing
+        tenant.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: CreateTenant
+      x-required-role: authenticated
+      x-audit-action: tenant.create
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker creates the Tenant node and a single owner Membership for the
+          authenticated principal only. The caller cannot name a different owner, cannot
+          attach the new tenant to an existing one, and gains no visibility into any other
+          tenant.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateTenantRequest"}
+      responses:
+        "201":
+          description: Tenant created; caller is its owner.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Tenant"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: readTenant
+      tags: [tenants]
+      summary: Read one tenant.
+      x-jac-walker: ReadTenant
+      x-required-role: viewer
+      x-audit-action: tenant.read
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker re-reads Membership(principal, tenant_id) from the graph. Absent
+          Membership yields NOT_A_MEMBER; a nonexistent tenant yields NOT_FOUND.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND]
+      responses:
+        "200":
+          description: The tenant.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Tenant"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/members":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: listMembers
+      tags: [tenants]
+      summary: List the tenant's members.
+      description: >-
+        `member.email` is populated only for `admin` and `owner` callers; `viewer` and
+        `member` callers receive `null` for it and see display names only.
+      x-jac-walker: ListMembers
+      x-required-role: viewer
+      x-audit-action: tenant.read
+      x-audit-note: AMBIGUOUS. The vocabulary has no `member.list`; the roster is treated as a tenant read.
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker re-reads the caller's Membership, then enumerates Membership edges of
+          that tenant node only, redacting email below admin rank.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: role
+          in: query
+          required: false
+          description: Filter by role.
+          schema: {$ref: "#/components/schemas/Role"}
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, invited, suspended, all]
+            default: active
+      responses:
+        "200":
+          description: Paged member roster.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MembershipList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/members/invites":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: inviteMember
+      tags: [tenants]
+      summary: Invite a member to the tenant.
+      description: |
+        Creates a single-use invite bound to `(tenant_id, email, role)`, valid 72h.
+
+        The 201 response contains `invite_token` exactly once. This is the ordinary
+        "copy invite link" product feature; the token is never readable again, is single-use,
+        and is a capability for one tenant only — presenting it against a different tenant
+        yields `403 TENANT_MISMATCH`.
+
+        Role ceiling: an `admin` may invite at `viewer`, `member` or `admin`. Only an `owner`
+        may invite at `owner`. An admin attempting to invite at `owner` receives
+        `403 INSUFFICIENT_ROLE`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: InviteMember
+      x-required-role: admin
+      x-audit-action: member.invite
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker re-reads the caller's Membership in this tenant, requires rank >= admin,
+          and additionally requires rank == owner when the requested role is owner. The
+          invite is attached to this tenant node only.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InviteMemberRequest"}
+      responses:
+        "201":
+          description: Invite created. Contains the one-time token.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InviteCreated"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/invites/accept":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: acceptInvite
+      tags: [tenants]
+      summary: Accept an invite and gain a Membership.
+      description: |
+        The only tenant-scoped endpoint that does **not** require an existing Membership —
+        creating one is its whole purpose. It still requires an authenticated user.
+
+        The invite is presented as a secret capability in the body, never as an addressable
+        id in the path, so there is no `/invites/{id}` surface to enumerate.
+
+        Failure modes, in order: a token bound to another tenant yields
+        `403 TENANT_MISMATCH`; a token that is unknown, expired, already used, revoked, or
+        addressed to a different email than the authenticated principal's yields a uniform
+        `404 NOT_FOUND` with no further detail.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: AcceptInvite
+      x-required-role: authenticated
+      x-audit-action: member.accept
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker resolves the invite by constant-time hash lookup scoped to this tenant,
+          verifies it is pending and unexpired, verifies its email equals the authenticated
+          principal's verified email, then creates a Membership at exactly the role recorded
+          on the invite. The requester cannot influence the granted role.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_FOUND, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AcceptInviteRequest"}
+      responses:
+        "200":
+          description: Membership created.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Membership"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/members/{membership_id}":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/MembershipId"
+    patch:
+      operationId: changeMemberRole
+      tags: [tenants]
+      summary: Change a member's role.
+      description: |
+        Step-up gated: requires `auth_age_s <= 900`, otherwise `401 REAUTH_REQUIRED`.
+
+        Constraints, all enforced server-side and all yielding `422 VALIDATION_FAILED`
+        except where noted:
+        - Granting or revoking `owner` requires `owner` rank — `403 INSUFFICIENT_ROLE`.
+        - An admin may not modify an owner's Membership — `403 INSUFFICIENT_ROLE`.
+        - The caller may not change their own role (no self-escalation) — `422`.
+        - The last remaining `owner` may not be demoted — `422`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: ChangeMemberRole
+      x-required-role: admin
+      x-audit-action: member.role_change
+      x-mutating: true
+      x-step-up-required: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker re-reads the caller's Membership, requires rank >= admin, then resolves
+          the target Membership by traversal from this tenant node only, so a membership_id
+          from another tenant is unreachable and yields NOT_FOUND. Owner-touching changes and
+          self-modification are refused independently of the requested role value.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChangeMemberRoleRequest"}
+      responses:
+        "200":
+          description: Role changed.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Membership"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    delete:
+      operationId: removeMember
+      tags: [tenants]
+      summary: Remove a member from the tenant.
+      description: |
+        Step-up gated. Revokes every session and API token bound to the removed Membership.
+
+        - An admin may not remove an `owner` — `403 INSUFFICIENT_ROLE`.
+        - The last remaining `owner` may not be removed — `422 VALIDATION_FAILED`.
+        - Self-removal is permitted unless the caller is the last owner.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: RemoveMember
+      x-required-role: admin
+      x-audit-action: member.remove
+      x-mutating: true
+      x-step-up-required: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Identical resolution path to changeMemberRole: role gate first, then traversal from
+          this tenant node only. Detaching the Membership edge is what removes access; no
+          cached grant survives it, and dependent credentials are revoked in the same
+          transaction.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      responses:
+        "200":
+          description: Membership removed and dependent credentials revoked.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RemoveMemberResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # --------------------------------------------------------------- projects --
+
+  "/tenants/{tenant_id}/projects":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List projects in a tenant.
+      description: >-
+        Results are filtered to the caller's sensitivity ceiling, so a `viewer` or `member`
+        never sees a `confidential` or `canary` project in a listing and never learns its
+        id. `total_visible` counts what the caller may see, not what exists.
+      x-jac-walker: ListProjects
+      x-required-role: viewer
+      x-audit-action: project.list
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker re-reads the caller's Membership, then traverses Project edges of this
+          tenant node only, applying the sensitivity floor predicate during traversal rather
+          than as a post-filter.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [created_at, updated_at, name]
+            default: updated_at
+      responses:
+        "200":
+          description: Paged project list, sensitivity-filtered.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProjectList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a project.
+      description: >-
+        Effective required role is `max(member, floor(sensitivity))`. Creating a project with
+        `sensitivity` of `confidential` or `canary` therefore requires `admin`; a `member`
+        attempting it receives `403 INSUFFICIENT_ROLE`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: CreateProject
+      x-required-role: member
+      x-required-role-conditional: admin when sensitivity != normal
+      x-audit-action: project.create
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          The walker re-reads the caller's Membership, requires rank >= member, and requires
+          rank >= the floor of the requested sensitivity. The new Project is attached to this
+          tenant node only; `tenant_id` cannot be supplied in the body.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateProjectRequest"}
+      responses:
+        "201":
+          description: Project created.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/projects/{project_id}":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      operationId: readProject
+      tags: [projects]
+      summary: Read one project.
+      description: >-
+        A `project_id` belonging to another tenant is not reachable by traversal from this
+        tenant node and yields `404 NOT_FOUND` — identical to an id that never existed. A
+        project above the caller's sensitivity ceiling yields the same `404`.
+      x-jac-walker: ReadProject
+      x-required-role: viewer
+      x-audit-action: project.read
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, then single-hop traversal Tenant -> Project constrained by the
+          sensitivity floor. The project id is never used as a global lookup key.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND]
+      responses:
+        "200":
+          description: The project.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a project.
+      description: >-
+        Effective required role is `max(member, floor(current sensitivity),
+        floor(requested sensitivity))`. A member cannot raise a project to `confidential` or
+        `canary`, and cannot lower one either, because reaching it at all requires admin.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: UpdateProject
+      x-required-role: member
+      x-required-role-conditional: admin when current or requested sensitivity != normal
+      x-audit-action: project.update
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read and role gate first, then traversal-scoped resolution, then the
+          sensitivity floor check against both current and requested values. `project_id`,
+          `tenant_id` and `created_at` are server-owned and rejected in the body.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/UpdateProjectRequest"}
+      responses:
+        "200":
+          description: Project updated.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project and its subtree.
+      description: >-
+        Requires `admin`. Because the role gate runs before resolution, a `member` receives
+        `403 INSUFFICIENT_ROLE` for every `project_id` — existent, foreign or invented — and
+        so learns nothing by probing.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: DeleteProject
+      x-required-role: admin
+      x-audit-action: project.delete
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, rank >= admin, then traversal-scoped resolution and cascading
+          detach of Task and Comment nodes within this project only.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND]
+      responses:
+        "200":
+          description: Project deleted.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeleteProjectResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # ------------------------------------------------------------------ tasks --
+
+  "/tenants/{tenant_id}/projects/{project_id}/tasks":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List tasks in a project.
+      description: >-
+        Filtered to the caller's sensitivity ceiling using each task's effective sensitivity,
+        `max(project.sensitivity, task.sensitivity)`.
+      x-jac-walker: ListTasks
+      x-required-role: viewer
+      x-audit-action: task.list
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, then two-hop traversal Tenant -> Project -> Task with the
+          sensitivity predicate applied at each hop. A project outside the caller's ceiling
+          is unreachable, so its tasks are unreachable too.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [todo, in_progress, blocked, done, all]
+            default: all
+        - name: priority
+          in: query
+          required: false
+          schema: {$ref: "#/components/schemas/TaskPriority"}
+        - name: assignee_user_id
+          in: query
+          required: false
+          schema: {$ref: "#/components/schemas/UserId"}
+      responses:
+        "200":
+          description: Paged task list, sensitivity-filtered.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TaskList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task in a project.
+      description: >-
+        Effective required role is `max(member, floor(project.sensitivity),
+        floor(requested task sensitivity))`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: CreateTask
+      x-required-role: member
+      x-required-role-conditional: admin when project or requested task sensitivity != normal
+      x-audit-action: task.create
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, rank >= member, project resolved by traversal within the
+          sensitivity ceiling, then the requested task sensitivity floor checked. The task is
+          attached to the resolved project node only.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateTaskRequest"}
+      responses:
+        "201":
+          description: Task created.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TaskId"
+    get:
+      operationId: readTask
+      tags: [tasks]
+      summary: Read one task.
+      description: >-
+        A `task_id` that exists under a different project or tenant is not reachable from
+        this path and yields `404 NOT_FOUND`. Attachment metadata is filtered to the caller's
+        ceiling; an attachment above it is omitted from `attachments` entirely rather than
+        stubbed.
+      x-jac-walker: ReadTask
+      x-required-role: viewer
+      x-audit-action: task.read
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, then Tenant -> Project -> Task traversal with the sensitivity
+          predicate at each hop.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND]
+      responses:
+        "200":
+          description: The task.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update a task.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: UpdateTask
+      x-required-role: member
+      x-required-role-conditional: admin when current or requested effective sensitivity != normal
+      x-audit-action: task.update
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read and rank >= member first, then traversal-scoped resolution, then
+          the sensitivity floor check against current and requested values. Server-owned
+          fields are rejected in the body.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/UpdateTaskRequest"}
+      responses:
+        "200":
+          description: Task updated.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete a task and its comments.
+      description: Requires `admin`; the role gate precedes resolution, so probing discloses nothing.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      x-jac-walker: DeleteTask
+      x-required-role: admin
+      x-audit-action: task.delete
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, rank >= admin, then traversal-scoped resolution and cascading
+          detach of this task's Comment nodes only.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND]
+      responses:
+        "200":
+          description: Task deleted.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeleteTaskResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/assign":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TaskId"
+    post:
+      operationId: assignTask
+      tags: [tasks]
+      summary: Assign or unassign a task.
+      description: >-
+        `assignee_user_id: null` unassigns. The assignee must resolve to an `active`
+        Membership in this tenant; if it does not — whether the user does not exist, is not a
+        member, or is suspended — the response is a uniform `422 VALIDATION_FAILED` with
+        `details[0].issue = "not_assignable"`, which discloses nothing about global user
+        existence or membership in any other tenant.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: AssignTask
+      x-required-role: member
+      x-audit-action: task.assign
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read and rank >= member, task resolved by traversal within the
+          ceiling, then the assignee resolved by traversal of this tenant's Membership edges
+          only. A user id from another tenant is unreachable by that traversal.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AssignTaskRequest"}
+      responses:
+        "200":
+          description: Assignment updated.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # --------------------------------------------------------------- comments --
+
+  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TaskId"
+    get:
+      operationId: listComments
+      tags: [comments]
+      summary: List comments on a task.
+      x-jac-walker: ListComments
+      x-required-role: viewer
+      x-audit-action: comment.list
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, then Tenant -> Project -> Task -> Comment traversal. Comments
+          inherit the task's effective sensitivity, so an unreachable task means unreachable
+          comments.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paged comment list.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CommentList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    post:
+      operationId: createComment
+      tags: [comments]
+      summary: Comment on a task.
+      description: >-
+        `body` is stored and returned as opaque UTF-8 text, up to 10000 characters. The API
+        never interprets, expands, templates or renders it, and never places it on an
+        instruction path. Text inside a comment that resembles a directive is inert data.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: CreateComment
+      x-required-role: member
+      x-audit-action: comment.create
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read and rank >= member, then task resolution by traversal within the
+          ceiling. `author_user_id` is taken from the authenticated principal and cannot be
+          supplied in the body.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateCommentRequest"}
+      responses:
+        "201":
+          description: Comment created.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Comment"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TaskId"
+      - $ref: "#/components/parameters/CommentId"
+    get:
+      operationId: readComment
+      tags: [comments]
+      summary: Read one comment.
+      x-jac-walker: ReadComment
+      x-required-role: viewer
+      x-audit-action: comment.read
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: Membership re-read, then full-depth traversal to the comment within the ceiling.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND]
+      responses:
+        "200":
+          description: The comment.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Comment"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+    delete:
+      operationId: deleteComment
+      tags: [comments]
+      summary: Delete a comment.
+      description: |
+        A `member` may delete only their own comment; `admin` and `owner` may delete any
+        comment in the tenant. A `viewer` may delete none.
+
+        DOCUMENTED EXCEPTION to "role check precedes resolution": authorship cannot be known
+        before the comment is resolved, so the order here is (1) rank >= member, else
+        `403 INSUFFICIENT_ROLE`; (2) traversal-scoped resolution within the sensitivity
+        ceiling, else `404 NOT_FOUND`; (3) authorship-or-admin check, else
+        `403 INSUFFICIENT_ROLE`. A member can therefore distinguish "someone else's comment"
+        from "no such comment" — but only among comments already visible to them, so no new
+        information is disclosed.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: DeleteComment
+      x-required-role: member
+      x-required-role-conditional: author, or admin for a comment authored by someone else
+      x-audit-action: comment.delete
+      x-mutating: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Rank >= member, traversal-scoped resolution, then `author_user_id == principal`
+          OR rank >= admin. Authorship is read from the graph, never from the request.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND]
+      responses:
+        "200":
+          description: Comment deleted.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeleteCommentResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # ----------------------------------------------------------------- search --
+
+  "/tenants/{tenant_id}/search":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: searchTenant
+      tags: [search]
+      summary: Search projects, tasks and comments within one tenant.
+      description: >-
+        Search is not a side channel. It applies the identical visibility predicate as a
+        direct read, so a `member` can never surface a `confidential` or `canary` record, its
+        id, or a snippet of it. `q` is tokenised and bound as parameters; no operator,
+        wildcard, regex or field-selection syntax is exposed, and the raw string never
+        reaches a query language.
+      x-jac-walker: SearchTenant
+      x-required-role: viewer
+      x-audit-action: search.query
+      x-mutating: false
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read, then a tenant-rooted index scan whose predicate includes both
+          the tenant partition and the caller's sensitivity ceiling. No cross-tenant index is
+          consulted.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Literal search terms.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+        - name: types
+          in: query
+          required: false
+          description: Restrict result kinds. Repeat the parameter for multiple kinds.
+          explode: true
+          style: form
+          schema:
+            type: array
+            uniqueItems: true
+            maxItems: 3
+            items:
+              type: string
+              enum: [project, task, comment]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paged search results, sensitivity-filtered.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SearchResults"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # ---------------------------------------------------------------- exports --
+
+  "/tenants/{tenant_id}/exports":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: requestExport
+      tags: [exports]
+      summary: Request an export job.
+      description: >-
+        Requires `admin` and step-up (`auth_age_s <= 900`). Budgeted at 5 per hour per
+        tenant. The job records a `sensitivity_ceiling` equal to the requester's ceiling at
+        request time; the generated artifact never contains records above it.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: []
+      x-jac-walker: RequestExport
+      x-required-role: admin
+      x-audit-action: export.request
+      x-mutating: true
+      x-step-up-required: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read and rank >= admin, then every requested project_id resolved by
+          traversal of this tenant only; an unresolvable id fails the whole request with
+          NOT_FOUND rather than being silently dropped.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RequestExportRequest"}
+      responses:
+        "202":
+          description: Export job accepted and queued.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ExportJob"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  "/tenants/{tenant_id}/exports/{export_id}":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ExportId"
+    get:
+      operationId: downloadExport
+      tags: [exports]
+      summary: Download an export job's artifact, or poll it.
+      description: >-
+        Returns `200` with the artifact when the job is `ready`, or `202` with the job record
+        while it is `pending`. Requires `admin` and step-up. The payload is re-filtered at
+        download time against the downloader's *current* ceiling, so a demotion between
+        request and download narrows what is returned; a caller who no longer clears the job
+        is refused. Artifacts expire 24h after becoming ready, after which the job resolves
+        `NOT_FOUND`.
+      security:
+        - sessionCookie: []
+        - apiToken: []
+      x-jac-walker: DownloadExport
+      x-required-role: admin
+      x-audit-action: export.download
+      x-mutating: false
+      x-step-up-required: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read and rank >= admin, then the job resolved by traversal of this
+          tenant only, then every record in the artifact re-filtered against the downloader's
+          current sensitivity ceiling before serialisation.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, SUSPENDED, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND]
+      responses:
+        "200":
+          description: The export artifact.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+            Content-Disposition:
+              description: Attachment disposition with the generated filename.
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ExportPayload"}
+        "202":
+          description: Job still generating.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+            Retry-After: {$ref: "#/components/headers/RetryAfter"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ExportJob"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+  # ----------------------------------------------------------- integrations --
+
+  "/tenants/{tenant_id}/integrations/call":
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: integrationCall
+      tags: [integrations]
+      summary: Dispatch a call to a registered outbound integration.
+      description: |
+        The legitimate service-to-service integration surface, and therefore the
+        lateral-movement surface the attack scenario probes.
+
+        Authorization is the union of two paths, both server-side:
+        - **Bearer API token** — the token's service-account Membership must be rank
+          `member` or above **and** the token must carry the `integration:call` scope. A
+          token bound to a different tenant than the path yields `403 TENANT_MISMATCH`.
+        - **User session** — requires rank `admin` **and** step-up (`auth_age_s <= 900`).
+
+        Anti-SSRF by construction: `connector` is a closed enum that the server resolves to a
+        pre-registered, pinned destination held in server configuration. The client never
+        supplies a URL, scheme, host, port, path or header. `payload` is validated against a
+        schema selected by `(connector, operation)` and unknown fields are rejected.
+        Outbound egress is confined to the sandbox allowlist. The call executes with the
+        tenant's own stored connector credentials — never the caller's, and never another
+        tenant's — so a compromised token cannot pivot across tenants through this endpoint.
+
+        Failure modes: unknown `connector` or `operation`, or a payload failing the selected
+        schema, yields `422 VALIDATION_FAILED`; a connector not enabled for this tenant
+        yields `404 NOT_FOUND`; a missing `integration:call` scope yields
+        `403 INSUFFICIENT_ROLE`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+        - apiToken: [integration:call]
+      x-jac-walker: IntegrationCall
+      x-required-role: "service account: member + scope integration:call; user session: admin + step-up"
+      x-audit-action: integration.call
+      x-mutating: true
+      x-step-up-required: true
+      x-authz:
+        authentication: required
+        server_side_check: >-
+          Membership re-read from the graph for whichever principal presented; scope set
+          re-read from the stored token record, never from the request; connector resolved
+          against this tenant's enabled-connector edges only; destination and credentials
+          taken from server configuration and the tenant's own connector node.
+      x-deny-reasons: [SOURCE_BLOCKED, RATE_LIMITED, NO_SESSION, SESSION_EXPIRED, TOKEN_REVOKED, REAUTH_REQUIRED, CSRF_INVALID, SUSPENDED, READONLY_MODE, TENANT_MISMATCH, NOT_A_MEMBER, INSUFFICIENT_ROLE, NOT_FOUND, VALIDATION_FAILED]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/IntegrationCallRequest"}
+      responses:
+        "200":
+          description: Integration call dispatched.
+          headers:
+            X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IntegrationCallResult"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+
+# ---------------------------------------------------------------------------
+# END PART 2
+# ---------------------------------------------------------------------------

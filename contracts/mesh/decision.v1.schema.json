@@ -106,7 +106,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "One of the ten containment kinds. Identical enum to assessment.v1.recommended_actions[].action — the two must never diverge. Enum is frozen and MUST match contracts/containment.contract.jac. Any change requires conductor approval.",
+            "description": "One of the ten containment kinds. Identical enum to assessment.v1.recommended_actions[].action — the two must never diverge. Enum is frozen and MUST match contracts/containment_contract.jac. Any change requires conductor approval.",
             "enum": [
               "revoke_session",
               "revoke_token",

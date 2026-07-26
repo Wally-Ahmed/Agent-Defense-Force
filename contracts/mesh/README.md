@@ -53,7 +53,7 @@ Used verbatim in `channels.yaml`, `assessment.v1.responder`, `effort_receipt.v1.
   `revoke_session`, `revoke_token`, `suspend_principal`, `throttle_source`, `block_source`,
   `force_reauth`, `feature_readonly`, `pause_queue`, `rotate_service_credential`, `raise_logging`.
   The two enums must never diverge, and both are frozen against
-  `contracts/containment.contract.jac` — that Jac contract's `Control` node and `guard()` path key
+  `contracts/containment_contract.jac` — that Jac contract's `Control` node and `guard()` path key
   on these exact names. Any change requires conductor approval.
 - **`blast_radius` is ordered** `narrow < moderate < broad`. "Minimum blast radius" means
   *narrowest*.

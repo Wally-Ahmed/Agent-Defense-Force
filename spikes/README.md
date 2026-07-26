@@ -33,7 +33,7 @@ A bypassing client could POST straight to `/walker/<Name>` with a hand-written
 **A firewall rule is not an acceptable mitigation**: environment-specific,
 silently absent on a fresh clone, invisible in code review. Instead the injected
 context is **HMAC-signed** by the gateway and verified by `guard()` in
-constant time before any field is trusted. See `contracts/req_ctx.contract.jac`.
+constant time before any field is trusted. See `contracts/req_ctx_contract.jac`.
 
 ## Also confirmed
 

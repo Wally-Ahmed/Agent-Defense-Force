@@ -1,0 +1,26 @@
+{
+  "campaign_stage_counts": {
+    "1": 3,
+    "10": 3,
+    "2": 4,
+    "3": 2,
+    "4": 5,
+    "5": 3,
+    "6": 6,
+    "7": 4,
+    "8": 4,
+    "9": 4
+  },
+  "distinct_sessions": 13,
+  "first_ts": "2026-03-17T14:00:00.383619Z",
+  "last_ts": "2026-03-17T14:19:31.010440Z",
+  "populations": {
+    "benign": 150,
+    "bulk": 62,
+    "campaign": 38
+  },
+  "schema_version": "1.0.0",
+  "seed": 1337,
+  "span_seconds": 1170.627,
+  "total_events": 250
+}
