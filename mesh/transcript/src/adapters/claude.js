@@ -51,6 +51,21 @@ export const claudeAdapter = {
               (Array.isArray(ev.tools) ? ` · ${ev.tools.length} tools` : ""),
           ];
         }
+        // Hook lifecycle and token-counter events are harness telemetry a human
+        // never sees in the terminal, and their payloads embed whole config and
+        // memory files. Summarised to one line by default — the event is still
+        // announced, never silently dropped, and the full payload remains in the
+        // .raw spool. TRANSCRIPT_CLAUDE_SYSTEM=full restores it; =off hides it.
+        if (TELEMETRY.test(ev.subtype ?? "")) {
+          const mode = process.env.TRANSCRIPT_CLAUDE_SYSTEM || "summary";
+          if (mode === "off") return [];
+          if (mode !== "full") {
+            const bits = [ev.hook_name, ev.hook_event, ev.status, ev.estimated_tokens]
+              .filter((x) => x !== undefined && x !== null)
+              .join(" · ");
+            return [`⏺ system/${ev.subtype}${bits ? ` (${bits})` : ""}`];
+          }
+        }
         return [`⏺ system/${ev.subtype ?? "?"} ${show(omit(ev, ["type", "subtype"]))}`];
 
       case "assistant":
@@ -76,6 +91,8 @@ export const claudeAdapter = {
     }
   },
 };
+
+const TELEMETRY = /^(hook_|thinking_tokens$)/;
 
 function omit(o, keys) {
   const out = {};

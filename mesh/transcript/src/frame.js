@@ -64,11 +64,17 @@ export function serialize(frame) {
 
 const pad = (n, w) => String(n).padStart(w, "0");
 
-/** Short, stable form of an incident id for the chat prefix. */
+/**
+ * Short, stable form of an incident id for the chat prefix.
+ *
+ * Head-and-tail, not a plain prefix: real incident ids are date-prefixed
+ * (inc-2026-07-26-0001), so truncating from the left alone would render every
+ * incident on a given day identically. The full id is always in the envelope.
+ */
 export function shortIncident(id) {
   if (!id) return "no-incident";
   const s = String(id);
-  return s.length <= 12 ? s : s.slice(0, 12);
+  return s.length <= 13 ? s : `${s.slice(0, 4)}…${s.slice(-8)}`;
 }
 
 /**

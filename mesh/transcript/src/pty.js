@@ -37,14 +37,28 @@ export function shellQuote(s) {
  *
  * @returns {{child: import("node:child_process").ChildProcess, argv: string[], pty: boolean}}
  */
-export function spawnCaptured({ command, args, env, cwd, pty = false }) {
+export function spawnCaptured({ command, args, env, cwd, pty = false, stdin }) {
   const eff = pty ? ptyArgv(command, args) : { command, args };
+
+  // BSD script(1) calls tcgetattr() on ITS OWN stdin and aborts with
+  // "tcgetattr/ioctl: Operation not supported on socket" when that is a Node
+  // pipe (a socketpair on macOS). Handing it /dev/null instead is what makes
+  // the pty path work, and costs nothing: every pty-wrapped adapter delivers
+  // its prompt through a file, never through stdin.
+  const stdinMode = pty ? "ignore" : "pipe";
+  if (pty && stdin !== undefined) {
+    throw new Error(
+      "pty capture cannot accept stdin — script(1) needs a non-pipe stdin; " +
+        "pass the prompt through a file instead",
+    );
+  }
+
   const child = spawn(eff.command, eff.args, {
     cwd,
     env,
     // Own process group so timeout can kill the whole tree (script + harness).
     detached: true,
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: [stdinMode, "pipe", "pipe"],
   });
   return { child, argv: [eff.command, ...eff.args], pty };
 }

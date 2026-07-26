@@ -5,15 +5,20 @@
 // session-file digest in between. The pipeline for every byte is:
 //
 //   child stdout/stderr
-//     -> line split (terminal-accurate: last \r-overwrite wins)
+//     -> line split             complete lines only, so a secret can never be
+//                               halved by a chunk boundary and match nothing
+//     -> PEM guard              the one credential form that spans newlines
 //     -> REDACT                 <- nothing leaves the process before this
-//     -> raw spool (.raw, byte-faithful, never truncated)
-//     -> adapter.render()       <- turns structured event JSON into the lines a
-//                                  human would have seen; identity for plain CLIs
-//     -> coalesce (idle flush / byte cap)
+//     -> raw spool (.raw)       redacted byte stream, never truncated
+//     -> display render         strip the CRLF terminator, collapse \r
+//                               overwrites the way a terminal would, strip ANSI,
+//                               then adapter.render() expands structured event
+//                               JSON into the lines a human would have seen
+//     -> coalesce               flush on idle or byte cap
 //     -> frame + monotonic seq
-//     -> envelope spool (.log, write-ahead, synchronous)
-//     -> sink queue (chat), best-effort, never blocks the harness
+//     -> emitFrame              the single exit: envelope spool (.log,
+//                               write-ahead, synchronous), then the sink queue
+//                               (chat), best-effort, never blocks the harness
 //
 // Nothing is truncated by default. A line larger than the chunk cap is SPLIT
 // across sequenced parts, not cut. See TRANSCRIPT_MAX_CHAT_BYTES for the only
@@ -69,6 +74,9 @@ export class LineSplitter {
   }
 }
 
+/** Smallest chunk cap that still produces sane frames. */
+export const MIN_CHUNK_BYTES = 64;
+
 export const DEFAULTS = {
   flushMs: 250, // streaming cadence: chat updates at least this often
   chunkBytes: 3500, // per-message payload cap (Cotal chunks chat at 6000)
@@ -101,7 +109,13 @@ function envInt(name, dflt) {
 export async function runTap(o) {
   const cfg = {
     flushMs: envInt("TRANSCRIPT_FLUSH_MS", DEFAULTS.flushMs),
-    chunkBytes: envInt("TRANSCRIPT_CHUNK_BYTES", DEFAULTS.chunkBytes),
+    // Floored: a cap of 0 would make every line "oversized" and a cap in the
+    // single digits would emit one frame per character. Both are pathological
+    // rather than useful, and neither is what anyone setting this var means.
+    chunkBytes: Math.max(
+      MIN_CHUNK_BYTES,
+      envInt("TRANSCRIPT_CHUNK_BYTES", DEFAULTS.chunkBytes),
+    ),
     maxChatBytes: envInt("TRANSCRIPT_MAX_CHAT_BYTES", DEFAULTS.maxChatBytes),
     killGraceMs: envInt("TRANSCRIPT_KILL_GRACE_MS", DEFAULTS.killGraceMs),
     timeoutMs: o.timeoutMs ?? envInt("TRANSCRIPT_TIMEOUT_MS", DEFAULTS.timeoutMs),
@@ -139,14 +153,12 @@ export async function runTap(o) {
   let rawBytes = 0;
   let redactedTotal = 0;
 
-  const emit = (kind, rawText, stream = "meta", extra) => {
-    // Meta frames go through the redactor too. The START banner echoes the
-    // harness argv, which can carry a `-c key="..."` override or a token-bearing
-    // flag — text the tap itself composed, and therefore text that would
-    // otherwise reach chat without ever passing a redaction boundary.
-    const { text, hits } = redactor(String(rawText));
-    for (const h of hits) redactedTotal += h.count;
-    const frame = makeFrame(ctx, { kind, seq: seq.next(), stream, text, extra });
+  /**
+   * The single exit from this process. EVERY frame goes through here, so the
+   * write-ahead spool and the chat volume cap are applied in exactly one place
+   * and cannot be bypassed by a new emit path.
+   */
+  const emitFrame = (frame) => {
     spool.write(frame); // write-ahead: on disk before chat ever sees it
     if (cfg.maxChatBytes > 0 && chatBytes > cfg.maxChatBytes) {
       if (!truncationAnnounced) {
@@ -167,6 +179,16 @@ export async function runTap(o) {
     chatBytes += Buffer.byteLength(renderChat(frame));
     sink.publish(frame);
     return frame;
+  };
+
+  const emit = (kind, rawText, stream = "meta", extra) => {
+    // Meta frames go through the redactor too. The START banner echoes the
+    // harness argv, which can carry a `-c key="..."` override or a token-bearing
+    // flag — text the tap itself composed, and therefore text that would
+    // otherwise reach chat without ever passing a redaction boundary.
+    const { text, hits } = redactor(String(rawText));
+    for (const h of hits) redactedTotal += h.count;
+    return emitFrame(makeFrame(ctx, { kind, seq: seq.next(), stream, text, extra }));
   };
 
   sink.onError = (msg) => {
@@ -232,16 +254,15 @@ export async function runTap(o) {
       flush();
       const parts = splitBytes(line, cfg.chunkBytes);
       parts.forEach((p, i) => {
-        const frame = makeFrame(ctx, {
-          kind: KIND.CHUNK,
-          seq: seq.next(),
-          stream,
-          text: p,
-          part: `${i + 1}/${parts.length}`,
-        });
-        spool.write(frame);
-        chatBytes += Buffer.byteLength(p);
-        sink.publish(frame);
+        emitFrame(
+          makeFrame(ctx, {
+            kind: KIND.CHUNK,
+            seq: seq.next(),
+            stream,
+            text: p,
+            part: `${i + 1}/${parts.length}`,
+          }),
+        );
       });
       return;
     }
@@ -256,6 +277,7 @@ export async function runTap(o) {
   // the partial code point instead of emitting U+FFFD into the transcript.
   const decoders = { stdout: new StringDecoder("utf8"), stderr: new StringDecoder("utf8") };
   const pemGuards = { stdout: makePemGuard(), stderr: makePemGuard() };
+  let seenFirstPtyLine = false;
 
   /**
    * Redact, spool and display ONE COMPLETE LINE.
@@ -266,7 +288,15 @@ export async function runTap(o) {
    * single-line secret cannot contain a newline — and the one credential form
    * that spans lines (a PEM block) is handled by the stateful guard below.
    */
-  const handleLine = (rawLine, stream) => {
+  const handleLine = (rawLine0, stream) => {
+    let rawLine = rawLine0;
+    // BSD script(1) echoes the EOF character as a literal "^D" on the first
+    // line when its stdin is /dev/null. Harness output, not harness content.
+    if (built.pty && stream === "stdout" && !seenFirstPtyLine) {
+      seenFirstPtyLine = true;
+      rawLine = rawLine.replace(/^\^D+/, "");
+      if (!rawLine.trim()) return;
+    }
     const guarded = pemGuards[stream](rawLine);
     if (guarded === null) {
       redactedTotal += 1; // interior of a suppressed key block
@@ -295,6 +325,7 @@ export async function runTap(o) {
       env: built.env,
       cwd: built.cwd,
       pty: built.pty,
+      stdin: built.stdin,
     });
   } catch (err) {
     emit(KIND.EXIT, `spawn failed: ${err.message}`);
@@ -429,13 +460,24 @@ export function makePemGuard() {
 /** Split a string into <=n-byte pieces without splitting a UTF-8 code point. */
 export function splitBytes(s, n) {
   const buf = Buffer.from(s, "utf8");
-  if (buf.length <= n) return [s];
+  const cap = Math.max(1, Math.floor(Number(n)) || 1);
+  if (buf.length <= cap) return [s];
   const out = [];
   let i = 0;
   while (i < buf.length) {
-    let end = Math.min(i + n, buf.length);
+    let end = Math.min(i + cap, buf.length);
     // Back off to a code-point boundary (continuation bytes are 10xxxxxx).
     while (end > i && end < buf.length && (buf[end] & 0xc0) === 0x80) end -= 1;
+    if (end <= i) {
+      // The cap is narrower than the code point sitting on this boundary, so
+      // backing off consumed the whole window. Emit the entire code point and
+      // overshoot the cap by a few bytes: pushing an empty piece here would
+      // leave `i` unmoved and spin this loop forever with the child still
+      // attached. Overshooting is always preferable to hanging or to slicing a
+      // character in half.
+      end = i + 1;
+      while (end < buf.length && (buf[end] & 0xc0) === 0x80) end += 1;
+    }
     out.push(buf.subarray(i, end).toString("utf8"));
     i = end;
   }
@@ -448,9 +490,13 @@ export function splitBytes(s, n) {
  * expand one JSON event into the several lines a human would have seen.
  */
 export function toDisplayLines(rawLine, adapter, cfg) {
-  let line = lastOverwrite(rawLine);
+  // Order is load-bearing. A pty terminates every line with CRLF, so the
+  // trailing CR must go FIRST: applied to "TTY=yes\r", lastOverwrite() would
+  // otherwise treat that terminator as an overwrite and return the empty string
+  // — silently blanking the entire transcript of every pty-captured runtime.
+  let line = String(rawLine).replace(/\r$/, "");
+  line = lastOverwrite(line);
   if (!cfg.keepAnsi) line = stripAnsi(line);
-  line = line.replace(/\r$/, "");
   let out;
   try {
     out = adapter.render ? adapter.render(line) : [line];
