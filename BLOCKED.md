@@ -26,14 +26,21 @@ All required headless flags confirmed present: `-p/--print`, `--model`, `--conve
 It prints a Google URL, you sign in, then paste the authorization code back into that same
 prompt.
 
-**Why I can't do it for you — and why a pasted code doesn't help.** I *can* trigger the flow
-and capture the URL; I did. But the URL carries a PKCE `code_challenge` generated in-memory by
-that specific process, and the matching verifier is never written to disk (confirmed: nothing
-under `~/.gemini` holds pending-auth state). Kill the process and the code it was waiting for
-becomes unusable against any new run. So the process that prints the URL must be the same one
-that receives the code — which means a live stdin, which means you.
+**Why I cannot do this for you — settled empirically, do not retry.**
 
-Authorization codes are single-use and expire in ~60s, so a stale one is harmless.
+Without a real TTY `agy` does not merely fail to finish the handshake, it refuses to begin
+one: `Error: authentication required. Run 'agy' to log in, then retry.` The interactive URL
+flow is offered only when it has a terminal. Detached, `script` cannot allocate one either
+(`tcgetattr/ioctl: Operation not supported on socket`), and a FIFO on stdin does not help
+because the refusal happens before stdin is ever read.
+
+Even with a URL in hand, the authorization code is redeemable only by the process that
+printed it: that process holds the PKCE `code_verifier`, which is generated in memory and
+never written to disk (verified — nothing under `~/.gemini` holds pending-auth state). So a
+code pasted anywhere other than the waiting prompt is unusable by construction.
+
+**Therefore: paste the code into the same terminal that printed the URL.** Three separate
+codes were relayed to me during this session and none could have worked.
 
 **Effort note for the receipt:** `agy --effort` accepts only `low|medium|high`. `high` is this
 runtime's ceiling, so it records as the effective setting — **not** a downgrade.
