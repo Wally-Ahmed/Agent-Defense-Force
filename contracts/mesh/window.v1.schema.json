@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jachackssf2026.dev/schemas/mesh/window.v1.schema.json",
+  "title": "window.v1",
+  "description": "FROZEN CONTRACT — do not edit without conductor approval. Monitor input: one window of PRE-AGGREGATED behavioral features. The monitor NEVER sees raw logs, raw request bodies, headers, or any attacker-controlled free text; it sees only the numeric/identity features in this envelope. WINDOWING: 15s tumbling windows (non-overlapping, window_end_ms - window_start_ms == 15000), retained by the monitor in a 6-window ring buffer (90s of history). The monitor scores the current window against the ring and against the `baseline` p95 counterparts carried in this same envelope. One entry in `actors` == one principal within one tenant for exactly this window.",
+  "x-contract": {
+    "frozen": true,
+    "producer": "feature aggregator (telemetry side of the target app)",
+    "consumers": ["monitor"],
+    "transport": "direct read / local queue into the monitor process (not a Cotal channel)"
+  },
+  "type": "object",
+  "required": [
+    "window_start_ms",
+    "window_end_ms",
+    "actors",
+    "baseline"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "window_start_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Inclusive start of the tumbling window, epoch milliseconds UTC."
+    },
+    "window_end_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Exclusive end of the tumbling window, epoch milliseconds UTC. Always window_start_ms + 15000 for a 15s tumbling window."
+    },
+    "actors": {
+      "type": "array",
+      "description": "One pre-aggregated feature row per active actor (principal x tenant) in this window. May be empty for an idle window.",
+      "items": {
+        "$ref": "#/$defs/actor"
+      }
+    },
+    "baseline": {
+      "$ref": "#/$defs/baseline"
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "title": "actor_features",
+      "description": "Pre-aggregated behavioral features for one principal in one tenant over this 15s window.",
+      "required": [
+        "principal_hash",
+        "tenant",
+        "req",
+        "distinct_paths",
+        "path_entropy",
+        "auth_fail",
+        "authz_deny",
+        "deny_ratio",
+        "new_endpoints_first_seen",
+        "src_ips_distinct",
+        "ua_distinct",
+        "session_ids",
+        "cross_tenant_attempts",
+        "canary_touch",
+        "post_deny_pivot_ms_p50",
+        "integration_calls",
+        "export_bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "principal_hash": {
+          "type": "string",
+          "description": "Stable pseudonymous identifier for the acting principal. Hashed upstream — never a raw username, email, or token."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "Tenant identifier the principal acted within."
+        },
+        "req": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total requests issued by this actor in the window."
+        },
+        "distinct_paths": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of distinct normalized request paths touched in the window."
+        },
+        "path_entropy": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Shannon entropy (bits) of the actor's normalized path distribution in the window. High entropy = broad enumeration."
+        },
+        "auth_fail": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Authentication failures (401 / bad credential) in the window."
+        },
+        "authz_deny": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Authorization denials (403 / policy deny) in the window."
+        },
+        "deny_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "(auth_fail + authz_deny) / req for the window. 0 when req == 0."
+        },
+        "new_endpoints_first_seen": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Endpoints this actor touched for the first time ever in this window (novelty signal)."
+        },
+        "src_ips_distinct": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Distinct source IPs used by this actor in the window."
+        },
+        "ua_distinct": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Distinct user-agent strings used by this actor in the window. Count only — the UA text itself is never forwarded to the monitor."
+        },
+        "session_ids": {
+          "type": "array",
+          "description": "Session identifiers active for this actor in the window. Used downstream as containment/join targets.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cross_tenant_attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Requests in the window that attempted to reach a tenant other than `tenant` (denied by the app's ordinary controls)."
+        },
+        "canary_touch": {
+          "type": "boolean",
+          "description": "True if this actor touched a synthetic canary record or protected export in the window."
+        },
+        "post_deny_pivot_ms_p50": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Median milliseconds between a denial and this actor's next distinct request. Low values indicate machine-speed adaptation rather than a human retrying."
+        },
+        "integration_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Calls made through legitimate integrations or service APIs in the window (lateral-movement surface)."
+        },
+        "export_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bytes returned to this actor through export / bulk-read endpoints in the window."
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "title": "baseline_p95",
+      "description": "Rolling p95 counterpart for each NUMERIC actor metric, computed over the 6-window ring buffer (90s). `session_ids` (list) and `canary_touch` (boolean) have no p95 counterpart and are deliberately absent. A metric with no history yet is reported as 0.",
+      "required": [
+        "p95_req",
+        "p95_distinct_paths",
+        "p95_path_entropy",
+        "p95_auth_fail",
+        "p95_authz_deny",
+        "p95_deny_ratio",
+        "p95_new_endpoints_first_seen",
+        "p95_src_ips_distinct",
+        "p95_ua_distinct",
+        "p95_cross_tenant_attempts",
+        "p95_post_deny_pivot_ms_p50",
+        "p95_integration_calls",
+        "p95_export_bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "p95_req": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.req over the ring buffer."
+        },
+        "p95_distinct_paths": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.distinct_paths over the ring buffer."
+        },
+        "p95_path_entropy": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.path_entropy over the ring buffer."
+        },
+        "p95_auth_fail": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.auth_fail over the ring buffer."
+        },
+        "p95_authz_deny": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.authz_deny over the ring buffer."
+        },
+        "p95_deny_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "p95 of actor.deny_ratio over the ring buffer."
+        },
+        "p95_new_endpoints_first_seen": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.new_endpoints_first_seen over the ring buffer."
+        },
+        "p95_src_ips_distinct": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.src_ips_distinct over the ring buffer."
+        },
+        "p95_ua_distinct": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.ua_distinct over the ring buffer."
+        },
+        "p95_cross_tenant_attempts": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.cross_tenant_attempts over the ring buffer."
+        },
+        "p95_post_deny_pivot_ms_p50": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.post_deny_pivot_ms_p50 over the ring buffer."
+        },
+        "p95_integration_calls": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.integration_calls over the ring buffer."
+        },
+        "p95_export_bytes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "p95 of actor.export_bytes over the ring buffer."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jachackssf2026.dev/schemas/mesh/effort_receipt.v1.schema.json",
+  "title": "effort_receipt.v1",
+  "description": "FROZEN CONTRACT — do not edit without conductor approval. One receipt per agent, written ONCE at boot, appended as a single JSON line to runs/<id>/effort.jsonl (JSONL: one object per line, no wrapping array). This schema describes ONE LINE of that file. GATE: the coordinator REFUSES to leave WATCHING unless six receipts exist — monitor plus all five responders — every one of them with downgraded:false. `blocked: true` marks an agent whose runtime cannot run live yet (not installed, not authenticated); `mocked: true` marks an agent answering from a recorded transcript instead of its real model. Either flag means the run is not an acceptance run and every artifact it touches must be labeled MOCKED. Effort is never silently downgraded or substituted: effort_effective is READ BACK from the runtime, and `source` records exactly where it was read from, so a downgrade is provable rather than assumed.",
+  "x-contract": {
+    "frozen": true,
+    "producer": "every agent, at boot (monitor + 5 responders)",
+    "consumers": ["coordinator (WATCHING gate)", "run artifacts / audit"],
+    "transport": "append-only file runs/<id>/effort.jsonl"
+  },
+  "type": "object",
+  "required": [
+    "agent",
+    "runtime",
+    "runtime_version",
+    "model_requested",
+    "model_effective",
+    "effort_requested",
+    "effort_effective",
+    "source",
+    "downgraded",
+    "blocked",
+    "mocked"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical agent id: monitor, responder_claude, responder_codex, responder_antigravity, responder_kimi, or responder_glm."
+    },
+    "runtime": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Harness/CLI this agent runs in (e.g. hermes, claude_code, codex, agy, opencode)."
+    },
+    "runtime_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version string reported by that runtime at boot."
+    },
+    "model_requested": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Model the harness was asked for, as an OpenRouter id."
+    },
+    "model_effective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Model actually bound, read back from the runtime. A mismatch with model_requested is a substitution and must be reported, never silently accepted."
+    },
+    "effort_requested": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reasoning effort requested — the highest the model/harness combination supports."
+    },
+    "effort_effective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reasoning effort actually in force, read back from the runtime rather than assumed. For runtimes that bake the level into the model name, repeat the level here."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exactly where the effective values were read from — the provenance of this receipt. E.g. \"stdout of `agy --list-models`\", \"response.usage.reasoning_effort\", \"config echo at handshake\"."
+    },
+    "downgraded": {
+      "type": "boolean",
+      "description": "True if effort_effective is weaker than effort_requested, or model_effective differs from model_requested. ANY true value blocks the coordinator from leaving WATCHING."
+    },
+    "blocked": {
+      "type": "boolean",
+      "description": "True when this agent cannot run live yet (runtime missing, or authentication not completed). Tracked in BLOCKED.md."
+    },
+    "mocked": {
+      "type": "boolean",
+      "description": "True when this agent answers from a recorded transcript instead of its real model. A mocked agent still speaks the real schemas, but the run is not an acceptance run."
+    }
+  }
+}

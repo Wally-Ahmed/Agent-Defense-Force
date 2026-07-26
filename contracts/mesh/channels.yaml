@@ -1,0 +1,217 @@
+# =====================================================================
+# channels.yaml — the Cotal ACL matrix for the SOC mesh
+# FROZEN CONTRACT — do not edit without conductor approval.
+# =====================================================================
+version: 1
+
+description: >-
+  FROZEN CONTRACT — do not edit without conductor approval. The complete Cotal
+  routing and access-control matrix for the six-model SOC mesh plus the
+  deterministic coordinator and the containment executor. `agents` is the
+  AUTHORITATIVE ACL — it is what the Jac policy layer enforces at the transport,
+  not a description of intent. The `channels` and `services` blocks are the
+  human-readable view of the same facts and must never contradict `agents`.
+  Two security properties are enforced mechanically here rather than by prompt:
+  (1) responders hold allowPublish [] on sec.incident, so no responder can ever
+  observe another responder's verdict — assessment independence is a property of
+  the transport; (2) the monitor's allowPublish is [sec.incident] and nothing
+  else, with no DM, no service call and no spawn — so a fully prompt-injected
+  monitor still cannot revoke anything, message anyone, or start a process.
+
+# ---------------------------------------------------------------------
+# Cotal routing primitives
+# ---------------------------------------------------------------------
+routing:
+  channel: "multicast — published once, delivered to every subscriber"
+  to: "unicast, at-least-once — delivered to one named recipient"
+  toService: "anycast — delivered to exactly ONE instance of the named service"
+
+# ---------------------------------------------------------------------
+# AUTHORITATIVE ACL. Enforced by Jac policy at the Cotal layer.
+# allowPublish   : channels this agent may publish to
+# allowSubscribe : channels this agent may subscribe to
+# allowTo        : agents this agent may unicast-DM
+# allowService   : services this agent may anycast to
+# allowSpawn     : may this agent start another process
+# ---------------------------------------------------------------------
+agents:
+
+  monitor:
+    role: "continuous behavioral monitor"
+    runtime: "hermes"
+    model: "z-ai/glm-5.2"
+    allowPublish: ["sec.incident"] # ONLY. This is the whole blast radius of a compromised monitor.
+    allowSubscribe: []
+    allowTo: []
+    allowService: []
+    allowSpawn: false
+    note: >-
+      Consumes window.v1 (pre-aggregated features) out of band; it never reads raw
+      logs and it is not a subscriber on any mesh channel. Emits incident.v1 only.
+
+  responder_claude:
+    role: "responder"
+    runtime: "claude_code"
+    model: "anthropic/claude-opus-5"
+    allowPublish: ["sec.deliberate"]
+    allowSubscribe: ["sec.incident", "sec.verdict", "sec.deliberate"]
+    allowTo: ["coordinator"]
+    allowService: []
+    allowSpawn: false
+
+  responder_codex:
+    role: "responder"
+    runtime: "codex"
+    model: "openai/gpt-5.6-sol"
+    allowPublish: ["sec.deliberate"]
+    allowSubscribe: ["sec.incident", "sec.verdict", "sec.deliberate"]
+    allowTo: ["coordinator"]
+    allowService: []
+    allowSpawn: false
+
+  responder_antigravity:
+    role: "responder"
+    runtime: "agy"
+    model: "google/gemini-3.1-pro-preview"
+    allowPublish: ["sec.deliberate"]
+    allowSubscribe: ["sec.incident", "sec.verdict", "sec.deliberate"]
+    allowTo: ["coordinator"]
+    allowService: []
+    allowSpawn: false
+
+  responder_kimi:
+    role: "responder"
+    runtime: "opencode"
+    model: "moonshotai/kimi-k3"
+    allowPublish: ["sec.deliberate"]
+    allowSubscribe: ["sec.incident", "sec.verdict", "sec.deliberate"]
+    allowTo: ["coordinator"]
+    allowService: []
+    allowSpawn: false
+
+  responder_glm:
+    role: "responder"
+    runtime: "opencode"
+    model: "z-ai/glm-5.2"
+    allowPublish: ["sec.deliberate"]
+    allowSubscribe: ["sec.incident", "sec.verdict", "sec.deliberate"]
+    allowTo: ["coordinator"]
+    allowService: []
+    allowSpawn: false
+
+  coordinator:
+    role: "deterministic vote counter — NOT an LLM judge"
+    runtime: "jac"
+    model: null # no model. The coordinator never calls a provider.
+    allowPublish: ["sec.verdict", "sec.deliberate"]
+    allowSubscribe: ["sec.incident", "sec.deliberate"]
+    allowTo: []
+    allowService: ["containment"]
+    allowSpawn: false
+    note: >-
+      The only agent that may reach containment. Publishes on sec.deliberate ONLY
+      the round-open / round-close control message; it contributes no verdict.
+
+  svc_containment:
+    role: "containment executor"
+    runtime: "jac"
+    model: null
+    serves: ["containment"]
+    allowPublish: []
+    allowSubscribe: []
+    allowTo: ["coordinator"] # execution receipts back to the decider. DEFAULTED — not specified in the frozen spec.
+    allowService: []
+    allowSpawn: false
+
+# ---------------------------------------------------------------------
+# Channels (multicast). Derived view of `agents` — keep in sync.
+# ---------------------------------------------------------------------
+channels:
+
+  "sec.incident":
+    mode: channel
+    durable: true
+    payload: "incident.v1"
+    publishers: ["monitor"]
+    subscribers:
+      - responder_claude
+      - responder_codex
+      - responder_antigravity
+      - responder_kimi
+      - responder_glm
+    enforces: >-
+      Every responder holds allowPublish [] on this channel. Responders receive
+      the incident and can never write back to it, so no responder can see any
+      other responder's verdict. Assessment independence is mechanical.
+
+  "sec.verdict":
+    mode: channel
+    durable: true # DEFAULTED — not specified in the frozen spec. Durable so the decision trail survives a restart.
+    payload: "decision.v1"
+    publishers: ["coordinator"]
+    subscribers:
+      - monitor
+      - responder_claude
+      - responder_codex
+      - responder_antigravity
+      - responder_kimi
+      - responder_glm
+    purpose: >-
+      Visibility. Coordinator-only publish: nobody else can announce a verdict.
+      Read-only observers (UI, replay, judging artifacts) also subscribe here.
+
+  "sec.deliberate":
+    mode: channel
+    durable: false # DEFAULTED — not specified in the frozen spec. Ephemeral: one bounded round, then closed.
+    payload: "free-form deliberation turns (not a frozen schema)"
+    publishers:
+      - coordinator # round-open / round-close control message only
+      - responder_claude
+      - responder_codex
+      - responder_antigravity
+      - responder_kimi
+      - responder_glm
+    subscribers:
+      - coordinator
+      - responder_claude
+      - responder_codex
+      - responder_antigravity
+      - responder_kimi
+      - responder_glm
+    gate: "split verdict ONLY"
+    rounds_max: 1
+    purpose: >-
+      Opened by the coordinator only when the five verdicts split, for exactly one
+      bounded round, then closed. It is deliberately NOT open during normal
+      assessment — that is what keeps the five assessments independent.
+
+# ---------------------------------------------------------------------
+# Services (anycast). Exactly one instance handles each request.
+# ---------------------------------------------------------------------
+services:
+
+  containment:
+    mode: toService
+    service: "svc_containment"
+    durable: true
+    task: "TASK_soc"
+    callers: ["coordinator"]
+    payload: "decision.v1.action_set entries"
+    why_anycast: >-
+      Exactly-one-actor is the correct semantic here. Containment actions are
+      idempotent by key, and anycast guarantees a single executor: no double
+      revoke, no two instances racing the same suspension. Durable delivery on
+      TASK_soc means an action is redelivered to another instance if the executor
+      dies mid-action, so containment cannot be silently lost.
+
+# ---------------------------------------------------------------------
+# Invariants a reviewer can check mechanically against `agents` above.
+# ---------------------------------------------------------------------
+invariants:
+  - "No responder appears in channels['sec.incident'].publishers."
+  - "'sec.incident' does not appear in any responder's allowPublish."
+  - "monitor.allowPublish == ['sec.incident'] and monitor.allowTo == [] and monitor.allowService == [] and monitor.allowSpawn == false."
+  - "Only the coordinator publishes on 'sec.verdict'."
+  - "Only the coordinator appears in services.containment.callers."
+  - "No agent has allowSpawn true."
+  - "Responder -> coordinator traffic is unicast DM (allowTo) only; it never touches a channel."

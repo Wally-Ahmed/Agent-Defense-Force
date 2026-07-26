@@ -33,3 +33,13 @@ venv/
 # OS / editor
 .DS_Store
 *.swp
+
+# Jac local data (graph DB, caches) — regenerated
+.jac/
+
+# Runtime output: logs, audit stream, run artifacts — regenerated
+var/
+runs/
+
+# Pinned external dependencies — vendored at a recorded SHA, never committed
+vendor/

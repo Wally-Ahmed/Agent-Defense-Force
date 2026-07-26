@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jachackssf2026.dev/schemas/mesh/usage.v1.schema.json",
+  "title": "usage.v1",
+  "description": "FROZEN CONTRACT — do not edit without conductor approval. One provider-usage record: what a single agent spent on a single incident. Emitted by every model-backed agent and rolled up into the run's cost report. `usd` is computed from contracts/mesh/prices.json (per-million-token rates): usd = in_tokens/1e6 * in_per_m + out_tokens/1e6 * out_per_m. Reasoning tokens are billed at the output rate by every provider in prices.json, so include them in out_tokens AND report them separately in reasoning_tokens — reasoning_tokens is a breakdown of out_tokens, not an addition to it. `estimated: true` means the number came from prices.json arithmetic; false means the provider reported an authoritative cost.",
+  "x-contract": {
+    "frozen": true,
+    "producer": "every model-backed agent (monitor + 5 responders)",
+    "consumers": ["run cost report / audit"],
+    "transport": "append-only file runs/<id>/usage.jsonl"
+  },
+  "type": "object",
+  "required": [
+    "agent",
+    "model",
+    "in_tokens",
+    "out_tokens",
+    "reasoning_tokens",
+    "usd",
+    "estimated",
+    "turns",
+    "incident_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical agent id: monitor, responder_claude, responder_codex, responder_antigravity, responder_kimi, or responder_glm."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Effective model id, as an OpenRouter id. Must be a key in contracts/mesh/prices.json for usd to be computable."
+    },
+    "in_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Input (prompt) tokens billed."
+    },
+    "out_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Output tokens billed, INCLUDING reasoning tokens."
+    },
+    "reasoning_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Reasoning tokens, reported separately as a breakdown of out_tokens. 0 when the runtime does not expose them."
+    },
+    "usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Cost in USD for this record."
+    },
+    "estimated": {
+      "type": "boolean",
+      "description": "True when usd was computed locally from prices.json; false when the provider returned an authoritative cost."
+    },
+    "turns": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Model turns (request/response round trips) this record covers."
+    },
+    "incident_id": {
+      "type": "string",
+      "description": "incident.v1.incident_id this spend is attributed to. Empty string for spend not tied to an incident (boot handshake, smoke test, idle monitoring)."
+    }
+  }
+}

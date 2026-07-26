@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jachackssf2026.dev/schemas/mesh/assessment.v1.schema.json",
+  "title": "assessment.v1",
+  "description": "FROZEN CONTRACT — do not edit without conductor approval. One responder's independent assessment of one incident. TRANSPORT: unicast DM (Cotal `to: coordinator`) — NEVER broadcast, never published on sec.incident. Responders have allowPublish [] on sec.incident, so no responder can observe another responder's verdict; independence is enforced mechanically by the ACL, not by convention. Exactly one assessment per responder per incident_id; a late duplicate is dropped by the coordinator. `rationale` is hard-capped at 400 characters — it is a justification, not a transcript.",
+  "x-contract": {
+    "frozen": true,
+    "producer": "responder_claude | responder_codex | responder_antigravity | responder_kimi | responder_glm",
+    "consumers": ["coordinator"],
+    "transport": "Cotal to:coordinator (unicast, at-least-once) — never a channel"
+  },
+  "type": "object",
+  "required": [
+    "incident_id",
+    "responder",
+    "model",
+    "effort_requested",
+    "effort_effective",
+    "verdict",
+    "confidence",
+    "campaign_stages",
+    "recommended_actions",
+    "skills_used",
+    "rationale",
+    "usage"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "incident_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Verbatim incident.v1.incident_id this assessment answers."
+    },
+    "responder": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical responder id. One of: responder_claude, responder_codex, responder_antigravity, responder_kimi, responder_glm."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "EFFECTIVE model id that produced this assessment, as an OpenRouter id (e.g. anthropic/claude-opus-5). Must match the model_effective on this agent's effort receipt."
+    },
+    "effort_requested": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reasoning effort the harness asked for."
+    },
+    "effort_effective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reasoning effort actually in force, read back from the runtime. If this differs from effort_requested the run is a downgrade and must be reported, never silently accepted."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "malicious",
+        "suspicious",
+        "benign"
+      ],
+      "description": "This responder's independent verdict. The coordinator counts these deterministically; it does not re-judge them."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Responder's confidence in its own verdict."
+    },
+    "campaign_stages": {
+      "type": "array",
+      "description": "Which of the ten authorized-scenario attack steps this responder believes are present (1..10, same numbering as incident.v1.stage_signatures).",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "description": "Containment this responder proposes. Advisory only — the coordinator, not the responder, decides. An action reaches the decision's action_set only if at least two responders propose it independently.",
+      "items": {
+        "type": "object",
+        "required": [
+          "action",
+          "target",
+          "ttl_s",
+          "blast_radius"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "One of the ten containment kinds. Closed enum — the containment executor implements exactly these and nothing else. Enum is frozen and MUST match contracts/containment.contract.jac. Any change requires conductor approval.",
+            "enum": [
+              "revoke_session",
+              "revoke_token",
+              "suspend_principal",
+              "throttle_source",
+              "block_source",
+              "force_reauth",
+              "feature_readonly",
+              "pause_queue",
+              "rotate_service_credential",
+              "raise_logging"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "description": "What the action applies to. Keys must be drawn from the incident's join_keys (or name a concrete app resource for feature/queue/credential actions). At least one key is required — an untargeted containment action is invalid.",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "principal_hash": {
+                "type": "string",
+                "description": "Principal to act on."
+              },
+              "tenant": {
+                "type": "string",
+                "description": "Tenant scope of the action."
+              },
+              "session_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Sessions to revoke / reauthenticate."
+              },
+              "src_ips": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Source addresses to rate-limit or block."
+              },
+              "feature": {
+                "type": "string",
+                "description": "Feature identifier for feature_readonly."
+              },
+              "queue": {
+                "type": "string",
+                "description": "Queue identifier for pause_queue."
+              },
+              "credential_id": {
+                "type": "string",
+                "description": "Synthetic service credential identifier for rotate_service_credential."
+              },
+              "integration": {
+                "type": "string",
+                "description": "Integration / service-API identifier when the action scopes to one integration."
+              }
+            }
+          },
+          "ttl_s": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Seconds the action stays in force before it automatically reverts. Every action is time-bounded; there is no permanent containment."
+          },
+          "blast_radius": {
+            "type": "string",
+            "enum": [
+              "narrow",
+              "moderate",
+              "broad"
+            ],
+            "description": "Estimated impact on legitimate users. Ordered narrow < moderate < broad; the coordinator caps each surviving action at the MINIMUM (narrowest) value any proposer offered."
+          }
+        }
+      }
+    },
+    "skills_used": {
+      "type": "array",
+      "description": "Cybersecurity skills this responder actually loaded, pinned by content hash so a run is reproducible and auditable.",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Repo-relative path of the skill file that was loaded."
+          },
+          "sha": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Content hash of that exact file at load time."
+          }
+        }
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "maxLength": 400,
+      "description": "Why this verdict. HARD CAP 400 characters — truncate, do not spill into other fields."
+    },
+    "usage": {
+      "type": "object",
+      "description": "Token and cost accounting for producing this single assessment.",
+      "required": [
+        "in",
+        "out",
+        "reasoning",
+        "usd"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "in": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Input tokens consumed."
+        },
+        "out": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Output tokens produced."
+        },
+        "reasoning": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reasoning tokens consumed. 0 when the runtime does not report them."
+        },
+        "usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated USD cost, computed from contracts/mesh/prices.json."
+        }
+      }
+    }
+  }
+}

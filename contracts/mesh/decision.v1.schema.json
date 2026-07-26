@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jachackssf2026.dev/schemas/mesh/decision.v1.schema.json",
+  "title": "decision.v1",
+  "description": "FROZEN CONTRACT — do not edit without conductor approval. The coordinator's output for one incident, published on `sec.verdict` (coordinator-only publish) and, when contain is true, executed via anycast `toService:containment`. The coordinator is DETERMINISTIC — it is a vote counter, not an LLM judge: it never re-reads the incident, never reasons about the evidence, and never overrides a responder. It applies exactly one rule: contain iff >=3/5 malicious AND score >= 1.5. ACTION_SET DERIVATION: keep only actions proposed independently by >=2 responders; for each survivor take the MINIMUM ttl_s proposed and the MINIMUM (narrowest) blast_radius proposed, where narrow < moderate < broad. Two proposals are 'the same action' when action AND target match. `degraded` is true whenever the decision was reached with fewer than five assessments in hand.",
+  "x-contract": {
+    "frozen": true,
+    "producer": "coordinator",
+    "consumers": ["svc_containment", "monitor", "responders", "observers/UI"],
+    "transport": "Cotal channel sec.verdict (coordinator-only publish); containment via toService:containment (anycast)"
+  },
+  "type": "object",
+  "required": [
+    "incident_id",
+    "decided_at_ms",
+    "verdict_counts",
+    "score",
+    "contain",
+    "quorum_met",
+    "responders_voted",
+    "responders_no_vote",
+    "action_set",
+    "degraded",
+    "rule"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "incident_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Verbatim incident.v1.incident_id this decision resolves."
+    },
+    "decided_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds UTC at which the coordinator closed the vote."
+    },
+    "verdict_counts": {
+      "type": "object",
+      "description": "Tally of the assessments received. Sums to responders_voted.",
+      "required": [
+        "malicious",
+        "suspicious",
+        "benign"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "malicious": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "suspicious": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "benign": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Deterministic weighted vote score. Containment requires score >= 1.5 in addition to the >=3/5 malicious majority."
+    },
+    "contain": {
+      "type": "boolean",
+      "description": "True iff the rule fired. When true and only when true, the action_set is dispatched to toService:containment."
+    },
+    "quorum_met": {
+      "type": "boolean",
+      "description": "True when enough assessments arrived to decide at all. A decision without quorum always has contain false."
+    },
+    "responders_voted": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "How many of the five responders returned an assessment before the deadline."
+    },
+    "responders_no_vote": {
+      "type": "array",
+      "description": "Canonical ids of responders that did not answer in time (timeout, crash, blocked, or not yet live).",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "action_set": {
+      "type": "array",
+      "description": "Containment actions that cleared the >=2-responder bar, each already capped at the minimum ttl_s and narrowest blast_radius proposed. Empty when contain is false.",
+      "items": {
+        "type": "object",
+        "required": [
+          "action",
+          "target",
+          "ttl_s",
+          "blast_radius",
+          "proposed_by"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "One of the ten containment kinds. Identical enum to assessment.v1.recommended_actions[].action — the two must never diverge. Enum is frozen and MUST match contracts/containment.contract.jac. Any change requires conductor approval.",
+            "enum": [
+              "revoke_session",
+              "revoke_token",
+              "suspend_principal",
+              "throttle_source",
+              "block_source",
+              "force_reauth",
+              "feature_readonly",
+              "pause_queue",
+              "rotate_service_credential",
+              "raise_logging"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "description": "Identical shape to assessment.v1.recommended_actions[].target. Carried through unchanged from the matching proposals.",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "principal_hash": {
+                "type": "string"
+              },
+              "tenant": {
+                "type": "string"
+              },
+              "session_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "src_ips": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "feature": {
+                "type": "string"
+              },
+              "queue": {
+                "type": "string"
+              },
+              "credential_id": {
+                "type": "string"
+              },
+              "integration": {
+                "type": "string"
+              }
+            }
+          },
+          "ttl_s": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "MINIMUM ttl_s across all proposals of this action. Shortest wins — containment expires as early as any responder was willing to accept."
+          },
+          "blast_radius": {
+            "type": "string",
+            "enum": [
+              "narrow",
+              "moderate",
+              "broad"
+            ],
+            "description": "MINIMUM blast_radius across all proposals of this action, ordered narrow < moderate < broad. Narrowest wins."
+          },
+          "proposed_by": {
+            "type": "array",
+            "description": "Canonical ids of the responders that independently proposed this action. At least two by construction — this is the audit trail for the >=2 rule.",
+            "minItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "degraded": {
+      "type": "boolean",
+      "description": "True when the decision was made with fewer than five assessments, or with any agent running blocked/mocked. A degraded decision is still valid but must be labeled as such in every artifact."
+    },
+    "rule": {
+      "type": "string",
+      "const": "contain iff >=3/5 malicious AND score >= 1.5",
+      "description": "The decision rule, emitted verbatim on every decision so the artifact is self-describing. Constant — exactly this string."
+    }
+  }
+}
