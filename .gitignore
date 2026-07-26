@@ -30,6 +30,10 @@ __pycache__/
 .venv/
 venv/
 
+# Vendored cybersecurity-skills library (pinned external dependency, rebuilt
+# from the SHA recorded in skills/PINNED.md — never committed, 49MB payload)
+vendor/
+
 # OS / editor
 .DS_Store
 *.swp
@@ -40,6 +44,3 @@ venv/
 # Runtime output: logs, audit stream, run artifacts — regenerated
 var/
 runs/
-
-# Pinned external dependencies — vendored at a recorded SHA, never committed
-vendor/

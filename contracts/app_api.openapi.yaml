@@ -228,6 +228,7 @@ x-northwind-audit:
     action is the `x-audit-action` of the operation, carrying
     `outcome: allowed | denied` and `deny_reason` when denied. A small number of operations
     additionally emit a SECONDARY event. Secondary events carry `secondary: true`.
+  event_schema_ref: "#/components/schemas/AuditEvent"
   primary_rule: >-
     One primary event per request, action = operation's x-audit-action,
     outcome = allowed on 2xx, denied otherwise.
@@ -314,13 +315,13 @@ x-northwind-gateway:
       Every non-GET request authenticated by cookie, including POST /auth/login and
       POST /auth/register. The gateway issues a pre-session __Host-csrf cookie to anonymous
       callers on any GET so that login itself is CSRF-protected.
-    not_required_on: Requests authenticated by Authorization: Bearer (no ambient authority).
+    not_required_on: "Requests authenticated by Authorization: Bearer (no ambient authority)."
   bearer_tokens:
     header: "Authorization: Bearer <api_token>"
     format: "nwp_<43 chars base62>"
-    storage: argon2id hash, never stored or logged in clear
+    storage: bcrypt hash (cost 12), never stored or logged in clear
     binding: exactly one tenant and one service-account Membership
-    scopes: [projects:read, tasks:read, tasks:write, comments:write, search:read, integration:call]
+    scopes: ["projects:read", "tasks:read", "tasks:write", "comments:write", "search:read", "integration:call"]
     never_accepted_on: [POST /auth/login, POST /auth/register, POST /auth/refresh, POST /auth/reauth]
     query_string_accepted: false
   step_up:
@@ -344,12 +345,12 @@ x-northwind-gateway:
       Sandbox provenance header. Recorded into audit events only. It has ZERO effect on
       authorization and ZERO effect on rate-limit bucketing; rotating it grants nothing.
   rate_limits:
-    - {scope: "POST /auth/login", budget: 5 per 900s per (source_ip, email_hash)}
-    - {scope: "POST /auth/login", budget: 20 per 900s per source_ip}
-    - {scope: "POST /auth/register", budget: 3 per 3600s per source_ip}
-    - {scope: read and list and search, budget: 600 per 60s per identity}
-    - {scope: read and list and search, budget: 1200 per 60s per source_ip}
-    - {scope: mutations, budget: 120 per 60s per identity}
+    - {scope: "POST /auth/login", budget: "5 per 900s per (source_ip, email_hash)"}
+    - {scope: "POST /auth/login", budget: "20 per 900s per source_ip"}
+    - {scope: "POST /auth/register", budget: "3 per 3600s per source_ip"}
+    - {scope: "read, list and search", budget: "600 per 60s per identity"}
+    - {scope: "read, list and search", budget: "1200 per 60s per source_ip"}
+    - {scope: "mutations", budget: "120 per 60s per identity"}
     - {scope: "POST /tenants/{tenant_id}/exports", budget: 5 per 3600s per tenant}
     - {scope: "POST /tenants/{tenant_id}/integrations/call", budget: 60 per 60s per api_token}
   cors:
@@ -410,6 +411,8 @@ x-northwind-internal-surface:
     The gateway strips any client-supplied `ctx` field from the request body unconditionally
     before injecting its own. A client cannot influence ctx by any means.
   ctx_schema_ref: "#/components/schemas/Ctx"
+  request_schema_ref: "#/components/schemas/WalkerRequest"
+  response_schema_ref: "#/components/schemas/WalkerResponse"
   authorization_note: >-
     ctx carries `tenant.role` for transport and logging convenience only. Every walker
     re-reads the Membership node from the graph and re-evaluates the role rank itself. No
@@ -433,7 +436,7 @@ paths:
         nothing until it either creates a tenant or accepts an invite. No session is
         established; the client must call `POST /auth/login` afterwards.
 
-        Passwords are hashed with argon2id (m=64MiB, t=3, p=1) and checked against a
+        Passwords are hashed with bcrypt (cost factor 12) and checked against a
         breached-password list. The plaintext is never logged, echoed, or stored.
 
         Disclosure note: a duplicate email returns `422 VALIDATION_FAILED` with
@@ -451,7 +454,7 @@ paths:
         authentication: none
         server_side_check: >-
           No authorization subject exists yet, so there is nothing to authorize against. The
-          walker enforces email uniqueness, the password policy, and argon2id hashing, and
+          walker enforces email uniqueness, the password policy, and bcrypt hashing, and
           creates no Membership. This is the only mutating endpoint in the API without an
           authenticated principal, and by construction it grants the caller no access to any
           existing resource.
@@ -1913,6 +1916,1305 @@ paths:
         "423": {$ref: "#/components/responses/Locked"}
         "429": {$ref: "#/components/responses/TooManyRequests"}
 
+components:
+
+  # ------------------------------------------------------- security schemes --
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-sid
+      description: >-
+        Opaque session identifier. HttpOnly, Secure, SameSite=Lax, Path=/, no Domain
+        attribute. Idle lifetime 30m, absolute 12h. Rotated on login, refresh and reauth.
+        The gateway exchanges it for a 90-second ES256 JWT for the Jac upstream; that JWT is
+        never exposed to the client.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: >-
+        Double-submit CSRF token. Must equal the `__Host-csrf` cookie, compared in constant
+        time. Required on every cookie-authenticated non-GET request, including login and
+        register. Not required and ignored for Bearer API token requests.
+    apiToken:
+      type: http
+      scheme: bearer
+      bearerFormat: nwp_token
+      description: >-
+        Service-account API token, `nwp_` followed by 43 base62 characters. Bound to exactly
+        one tenant and one service-account Membership, and carries an explicit scope set.
+        Stored as an argon2id hash. Accepted only on the `Authorization` header, never in a
+        query string, and never on the `/auth/*` endpoints. This is the credential class the
+        compromised synthetic identity in the attack fixture belongs to; it is an ordinary
+        token with ordinary, minimal privileges.
+
+  # ------------------------------------------------------------- parameters --
+
+  parameters:
+    TenantId:
+      name: tenant_id
+      in: path
+      required: true
+      description: Tenant slug. Every resource path is rooted here.
+      schema: {$ref: "#/components/schemas/TenantId"}
+    MembershipId:
+      name: membership_id
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/MembershipId"}
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/ProjectId"}
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/TaskId"}
+    CommentId:
+      name: comment_id
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/CommentId"}
+    ExportId:
+      name: export_id
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/ExportId"}
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size. Values above the maximum are rejected, not clamped.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: >-
+        Opaque continuation cursor from a previous `next_cursor`. HMAC-signed and bound to
+        this tenant, endpoint and filter set, valid 900s. A cursor that is expired, tampered
+        with, or reused against a different tenant, endpoint or filter set yields
+        `422 VALIDATION_FAILED`.
+      schema:
+        type: string
+        maxLength: 512
+        pattern: "^[A-Za-z0-9_-]{16,512}$"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Optional client-generated key. Replaying it with a byte-identical body returns the
+        original response; replaying it with a different body yields
+        `422 VALIDATION_FAILED`. Keys are scoped per principal and retained 24h.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^[A-Za-z0-9_.:-]{8,128}$"
+
+  # ---------------------------------------------------------------- headers --
+
+  headers:
+    XRequestId:
+      description: Correlation id, echoed on every response. Matches `error.request_id` on failures.
+      required: true
+      schema: {$ref: "#/components/schemas/RequestId"}
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: {type: integer, minimum: 0}
+    RateLimitLimit:
+      description: Requests permitted in the current window.
+      schema: {type: integer, minimum: 0}
+    RateLimitRemaining:
+      description: Requests remaining in the current window.
+      schema: {type: integer, minimum: 0}
+    RateLimitReset:
+      description: Unix epoch seconds at which the current window resets.
+      schema: {type: integer, minimum: 0}
+    SetCookieSession:
+      description: >-
+        Sets `__Host-sid` (HttpOnly; Secure; SameSite=Lax; Path=/) and `__Host-csrf`
+        (Secure; SameSite=Lax; Path=/; not HttpOnly). Sent as two Set-Cookie headers.
+      schema: {type: string}
+    SetCookieCleared:
+      description: Clears `__Host-sid` and `__Host-csrf` with Max-Age=0.
+      schema: {type: string}
+
+  # -------------------------------------------------------------- responses --
+
+  responses:
+    Unauthorized:
+      description: |
+        Authentication failed. `error.code` is one of `NO_SESSION`, `SESSION_EXPIRED`,
+        `TOKEN_REVOKED`, `REAUTH_REQUIRED`.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            no_session:
+              summary: No credential presented.
+              value:
+                error: {code: NO_SESSION, message: Authentication required., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            session_expired:
+              summary: Session past its idle or absolute lifetime.
+              value:
+                error: {code: SESSION_EXPIRED, message: Your session has expired. Sign in again., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            token_revoked:
+              summary: Credential revoked by a containment action.
+              value:
+                error: {code: TOKEN_REVOKED, message: This credential is no longer valid., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            reauth_required:
+              summary: Step-up needed for a sensitive operation.
+              value:
+                error: {code: REAUTH_REQUIRED, message: Confirm your password to continue., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+    UnauthorizedLogin:
+      description: |
+        Authentication failed. Always `NO_SESSION` with the fixed message
+        `Invalid email or password.` — byte-identical for an unknown account, a wrong
+        password, and a suspended account.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            invalid:
+              value:
+                error: {code: NO_SESSION, message: Invalid email or password., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+    Forbidden:
+      description: |
+        Authenticated but refused. `error.code` is one of `NOT_A_MEMBER`,
+        `INSUFFICIENT_ROLE`, `TENANT_MISMATCH`, `CSRF_INVALID`, `SUSPENDED`,
+        `SOURCE_BLOCKED`. See `x-northwind-decision-order` for which wins when several apply.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            not_a_member:
+              value:
+                error: {code: NOT_A_MEMBER, message: You are not a member of this tenant., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            insufficient_role:
+              value:
+                error: {code: INSUFFICIENT_ROLE, message: Your role does not permit this operation., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            tenant_mismatch:
+              value:
+                error: {code: TENANT_MISMATCH, message: This credential is not valid for the requested tenant., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            csrf_invalid:
+              value:
+                error: {code: CSRF_INVALID, message: CSRF validation failed., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            suspended:
+              value:
+                error: {code: SUSPENDED, message: This account is suspended., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+            source_blocked:
+              value:
+                error: {code: SOURCE_BLOCKED, message: Requests from this source are not being accepted., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+    NotFound:
+      description: >-
+        The addressed tenant does not exist, or the target is not reachable by traversal of
+        the tenant subtree at the caller's sensitivity ceiling. Deliberately
+        indistinguishable from a nonexistent id.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            not_found:
+              value:
+                error: {code: NOT_FOUND, message: Not found., request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV}
+    Unprocessable:
+      description: Schema or semantic validation failed.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            validation_failed:
+              value:
+                error:
+                  code: VALIDATION_FAILED
+                  message: The request could not be processed.
+                  request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV
+                  details:
+                    - {field: name, issue: too_long}
+                    - {field: sensitivity, issue: not_permitted_for_role}
+    Locked:
+      description: >-
+        The targeted feature has been switched to read-only by a containment action. Only
+        non-GET requests are affected; reads on the same feature continue to succeed.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+        Retry-After: {$ref: "#/components/headers/RetryAfter"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            readonly_mode:
+              value:
+                error:
+                  code: READONLY_MODE
+                  message: This feature is temporarily read-only.
+                  request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV
+                  feature: exports
+                  retry_after_s: 900
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        X-Request-Id: {$ref: "#/components/headers/XRequestId"}
+        Retry-After: {$ref: "#/components/headers/RetryAfter"}
+        X-RateLimit-Limit: {$ref: "#/components/headers/RateLimitLimit"}
+        X-RateLimit-Remaining: {$ref: "#/components/headers/RateLimitRemaining"}
+        X-RateLimit-Reset: {$ref: "#/components/headers/RateLimitReset"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            rate_limited:
+              value:
+                error:
+                  code: RATE_LIMITED
+                  message: Too many requests.
+                  request_id: req_01JZ8Q4M9K3P7X2B6D5F1H0TAV
+                  retry_after_s: 42
+
+  # ---------------------------------------------------------------- schemas --
+
+  schemas:
+
+    # -- identifiers ---------------------------------------------------------
+
+    TenantId:
+      type: string
+      pattern: "^t_[a-z0-9][a-z0-9_]{1,30}$"
+      description: Tenant slug. Sandbox fixture tenants are t_acme, t_globex, t_initech.
+      examples: [t_acme]
+    UserId:
+      type: string
+      pattern: "^u_[0-9A-HJKMNP-TV-Z]{26}$"
+      examples: [u_01JZ8Q4M9K3P7X2B6D5F1H0TAV]
+    MembershipId:
+      type: string
+      pattern: "^m_[0-9A-HJKMNP-TV-Z]{26}$"
+      examples: [m_01JZ8Q4M9K3P7X2B6D5F1H0TAV]
+    ProjectId:
+      type: string
+      pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$"
+      examples: [prj_01JZ8Q4M9K3P7X2B6D5F1H0TAV]
+    TaskId:
+      type: string
+      pattern: "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+      examples: [tsk_01JZ8Q4M9K3P7X2B6D5F1H0TAV]
+    CommentId:
+      type: string
+      pattern: "^cmt_[0-9A-HJKMNP-TV-Z]{26}$"
+      examples: [cmt_01JZ8Q4M9K3P7X2B6D5F1H0TAV]
+    AttachmentId:
+      type: string
+      pattern: "^att_[0-9A-HJKMNP-TV-Z]{26}$"
+    InviteId:
+      type: string
+      pattern: "^inv_[0-9A-HJKMNP-TV-Z]{26}$"
+    ExportId:
+      type: string
+      pattern: "^exp_[0-9A-HJKMNP-TV-Z]{26}$"
+    SessionId:
+      type: string
+      pattern: "^sess_[0-9A-HJKMNP-TV-Z]{26}$"
+    ApiTokenId:
+      type: string
+      pattern: "^at_[0-9A-HJKMNP-TV-Z]{26}$"
+    RequestId:
+      type: string
+      pattern: "^req_[0-9A-HJKMNP-TV-Z]{26}$"
+    EventId:
+      type: string
+      pattern: "^ev_[0-9A-HJKMNP-TV-Z]{26}$"
+    CallId:
+      type: string
+      pattern: "^call_[0-9A-HJKMNP-TV-Z]{26}$"
+
+    # -- enums ---------------------------------------------------------------
+
+    Role:
+      type: string
+      enum: [owner, admin, member, viewer]
+      description: >-
+        Held on a Membership, never on a User. Rank order is owner > admin > member > viewer.
+    Sensitivity:
+      type: string
+      enum: [normal, confidential, canary]
+      description: >-
+        Reachability floor: normal -> viewer, confidential -> admin, canary -> admin.
+        `canary` and `confidential` are authorized by the identical code path with the
+        identical floor. The application has no branch on `canary`, emits no special event
+        for it, and alters no response for it. The distinct value exists only so the fixture
+        generator and the external monitor can identify the seeded record.
+    DenyReason:
+      type: string
+      enum:
+        - NO_SESSION
+        - SESSION_EXPIRED
+        - TOKEN_REVOKED
+        - NOT_A_MEMBER
+        - INSUFFICIENT_ROLE
+        - TENANT_MISMATCH
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - CSRF_INVALID
+        - SUSPENDED
+        - SOURCE_BLOCKED
+        - REAUTH_REQUIRED
+        - READONLY_MODE
+    AuditAction:
+      type: string
+      enum:
+        - auth.register
+        - auth.login
+        - auth.login_failed
+        - auth.logout
+        - auth.session_expired
+        - auth.token_issued
+        - auth.token_revoked
+        - auth.reauth_required
+        - tenant.create
+        - tenant.read
+        - member.invite
+        - member.accept
+        - member.role_change
+        - member.remove
+        - project.create
+        - project.read
+        - project.list
+        - project.update
+        - project.delete
+        - task.create
+        - task.read
+        - task.list
+        - task.update
+        - task.delete
+        - task.assign
+        - comment.create
+        - comment.read
+        - comment.list
+        - comment.delete
+        - export.request
+        - export.download
+        - search.query
+        - integration.call
+    TaskStatus:
+      type: string
+      enum: [todo, in_progress, blocked, done]
+    TaskPriority:
+      type: string
+      enum: [low, normal, high, urgent]
+    Connector:
+      type: string
+      enum: [slack_notify, github_sync, calendar_push, analytics_ingest]
+      description: >-
+        Closed enum resolved server-side to a pinned, pre-registered destination. The client
+        never supplies a URL, host, port, path or header.
+
+    # -- errors --------------------------------------------------------------
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          additionalProperties: false
+          properties:
+            code: {$ref: "#/components/schemas/DenyReason"}
+            message:
+              type: string
+              description: Human-readable and deliberately non-disclosing. Never contains identifiers of resources the caller cannot see.
+            request_id: {$ref: "#/components/schemas/RequestId"}
+            retry_after_s:
+              type: [integer, "null"]
+              minimum: 0
+              description: Present for RATE_LIMITED and READONLY_MODE.
+            feature:
+              type: [string, "null"]
+              enum: [projects, tasks, comments, exports, integrations, all, null]
+              description: Present for READONLY_MODE. Names the feature that was switched to read-only.
+            details:
+              type: array
+              maxItems: 50
+              description: Present only for VALIDATION_FAILED.
+              items:
+                type: object
+                required: [field, issue]
+                additionalProperties: false
+                properties:
+                  field: {type: string}
+                  issue:
+                    type: string
+                    examples: [required, too_long, malformed, not_permitted_for_role, not_assignable, cursor_invalid, idempotency_key_reused]
+
+    # -- auth ----------------------------------------------------------------
+
+    RegisterRequest:
+      type: object
+      required: [email, password, display_name]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        password:
+          type: string
+          minLength: 12
+          maxLength: 200
+          description: Checked against a breached-password list. Hashed with argon2id. Never logged or echoed.
+          writeOnly: true
+        display_name: {type: string, minLength: 1, maxLength: 80}
+    UserSelf:
+      type: object
+      required: [user_id, email, display_name, created_at]
+      additionalProperties: false
+      properties:
+        user_id: {$ref: "#/components/schemas/UserId"}
+        email: {type: string, format: email}
+        display_name: {type: string}
+        created_at: {type: string, format: date-time}
+        mfa_enabled: {type: boolean, default: false}
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        password: {type: string, minLength: 1, maxLength: 200, writeOnly: true}
+        remember_me: {type: boolean, default: false}
+    LoginResponse:
+      type: object
+      required: [user, session, memberships]
+      additionalProperties: false
+      properties:
+        user: {$ref: "#/components/schemas/UserSelf"}
+        session: {$ref: "#/components/schemas/Session"}
+        memberships:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/MembershipSummary"}
+    LogoutResponse:
+      type: object
+      required: [logged_out, session_id, revoked_at]
+      additionalProperties: false
+      properties:
+        logged_out: {type: boolean, const: true}
+        session_id: {$ref: "#/components/schemas/SessionId"}
+        revoked_at: {type: string, format: date-time}
+    ReauthRequest:
+      type: object
+      required: [password]
+      additionalProperties: false
+      properties:
+        password: {type: string, minLength: 1, maxLength: 200, writeOnly: true}
+    Session:
+      type: object
+      required: [session_id, issued_at, expires_at, absolute_expires_at, auth_age_s, amr]
+      additionalProperties: false
+      properties:
+        session_id: {$ref: "#/components/schemas/SessionId"}
+        issued_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time, description: "Idle expiry, 30m from last use."}
+        absolute_expires_at: {type: string, format: date-time, description: "Hard ceiling, 12h from first login. Never extended."}
+        auth_age_s:
+          type: integer
+          minimum: 0
+          description: Seconds since the last password proof. Must be <= 900 for step-up-gated operations.
+        amr:
+          type: array
+          items: {type: string, enum: [pwd, api_token]}
+    SessionEnvelope:
+      type: object
+      required: [session]
+      additionalProperties: false
+      properties:
+        session: {$ref: "#/components/schemas/Session"}
+    SessionInfo:
+      type: object
+      required: [authenticated, principal_kind, memberships, flags]
+      additionalProperties: false
+      properties:
+        authenticated: {type: boolean, const: true}
+        principal_kind: {type: string, enum: [user, service_account]}
+        user:
+          anyOf:
+            - {$ref: "#/components/schemas/UserSelf"}
+            - {type: "null"}
+        session:
+          anyOf:
+            - {$ref: "#/components/schemas/Session"}
+            - {type: "null"}
+        api_token:
+          description: Present only for service-account principals. The token value itself is never returned.
+          anyOf:
+            - type: object
+              required: [api_token_id, tenant_id, scopes, expires_at]
+              additionalProperties: false
+              properties:
+                api_token_id: {$ref: "#/components/schemas/ApiTokenId"}
+                tenant_id: {$ref: "#/components/schemas/TenantId"}
+                scopes: {type: array, items: {type: string}}
+                expires_at: {type: string, format: date-time}
+            - {type: "null"}
+        memberships:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/MembershipSummary"}
+        flags:
+          type: object
+          required: [require_reauth, readonly_features]
+          additionalProperties: false
+          properties:
+            require_reauth: {type: boolean}
+            readonly_features:
+              type: array
+              items: {type: string, enum: [projects, tasks, comments, exports, integrations, all]}
+
+    # -- tenants and members -------------------------------------------------
+
+    Tenant:
+      type: object
+      required: [tenant_id, name, plan, status, created_at, my_role, my_membership_id]
+      additionalProperties: false
+      properties:
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        name: {type: string, maxLength: 120}
+        plan: {type: string, enum: [free, team, business]}
+        status: {type: string, enum: [active, suspended]}
+        created_at: {type: string, format: date-time}
+        member_count: {type: integer, minimum: 0}
+        project_count:
+          type: integer
+          minimum: 0
+          description: Projects visible to this caller, not projects that exist.
+        my_role: {$ref: "#/components/schemas/Role"}
+        my_membership_id: {$ref: "#/components/schemas/MembershipId"}
+    TenantList:
+      type: object
+      required: [items, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/Tenant"}}
+        next_cursor: {type: [string, "null"], maxLength: 512}
+        has_more: {type: boolean}
+        total_visible: {type: [integer, "null"], minimum: 0}
+    CreateTenantRequest:
+      type: object
+      required: [name, tenant_id]
+      additionalProperties: false
+      properties:
+        tenant_id:
+          allOf: [{$ref: "#/components/schemas/TenantId"}]
+          description: Requested slug. Must be globally unique; a collision yields VALIDATION_FAILED.
+        name: {type: string, minLength: 1, maxLength: 120}
+        plan: {type: string, enum: [free, team, business], default: free}
+    MemberSummary:
+      type: object
+      required: [user_id, display_name, email]
+      additionalProperties: false
+      properties:
+        user_id: {$ref: "#/components/schemas/UserId"}
+        display_name: {type: string}
+        email:
+          type: [string, "null"]
+          format: email
+          description: Populated only for admin and owner callers. Null for viewer and member.
+    Membership:
+      type: object
+      required: [membership_id, tenant_id, user_id, role, status, created_at]
+      additionalProperties: false
+      properties:
+        membership_id: {$ref: "#/components/schemas/MembershipId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        user_id: {$ref: "#/components/schemas/UserId"}
+        role: {$ref: "#/components/schemas/Role"}
+        status: {type: string, enum: [active, invited, suspended]}
+        member:
+          anyOf:
+            - {$ref: "#/components/schemas/MemberSummary"}
+            - {type: "null"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    MembershipSummary:
+      type: object
+      required: [tenant_id, membership_id, role, tenant_name]
+      additionalProperties: false
+      properties:
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        membership_id: {$ref: "#/components/schemas/MembershipId"}
+        role: {$ref: "#/components/schemas/Role"}
+        tenant_name: {type: string}
+        status: {type: string, enum: [active, invited, suspended]}
+    MembershipList:
+      type: object
+      required: [items, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/Membership"}}
+        next_cursor: {type: [string, "null"], maxLength: 512}
+        has_more: {type: boolean}
+        total_visible: {type: [integer, "null"], minimum: 0}
+    InviteMemberRequest:
+      type: object
+      required: [email, role]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        role:
+          allOf: [{$ref: "#/components/schemas/Role"}]
+          description: An admin may invite at viewer, member or admin. Only an owner may invite at owner.
+        expires_in_s: {type: integer, minimum: 3600, maximum: 604800, default: 259200}
+    InviteCreated:
+      type: object
+      required: [invite_id, tenant_id, email, role, status, expires_at, invite_token]
+      additionalProperties: false
+      properties:
+        invite_id: {$ref: "#/components/schemas/InviteId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        email: {type: string, format: email}
+        role: {$ref: "#/components/schemas/Role"}
+        status: {type: string, enum: [pending]}
+        invited_by: {$ref: "#/components/schemas/UserId"}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        invite_token:
+          type: string
+          minLength: 43
+          maxLength: 64
+          readOnly: true
+          description: >-
+            Single-use capability, returned exactly once at creation and never readable
+            again. Stored only as a hash. Bound to this tenant, email and role. This is the
+            ordinary "copy invite link" product feature, not a bypass: presenting it grants
+            precisely the role recorded on the invite, to the invited email address only.
+    AcceptInviteRequest:
+      type: object
+      required: [invite_token]
+      additionalProperties: false
+      properties:
+        invite_token: {type: string, minLength: 43, maxLength: 64, writeOnly: true}
+    ChangeMemberRoleRequest:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: {$ref: "#/components/schemas/Role"}
+    RemoveMemberResponse:
+      type: object
+      required: [membership_id, tenant_id, removed_at, revoked_sessions, revoked_api_tokens]
+      additionalProperties: false
+      properties:
+        membership_id: {$ref: "#/components/schemas/MembershipId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        removed_at: {type: string, format: date-time}
+        revoked_sessions: {type: integer, minimum: 0}
+        revoked_api_tokens: {type: integer, minimum: 0}
+
+    # -- projects ------------------------------------------------------------
+
+    Project:
+      type: object
+      required: [project_id, tenant_id, key, name, sensitivity, status, created_at, updated_at]
+      additionalProperties: false
+      properties:
+        project_id: {$ref: "#/components/schemas/ProjectId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        key: {type: string, pattern: "^[A-Z][A-Z0-9]{1,9}$", description: "Short human key, unique within the tenant."}
+        name: {type: string, maxLength: 160}
+        description: {type: [string, "null"], maxLength: 4000}
+        sensitivity: {$ref: "#/components/schemas/Sensitivity"}
+        status: {type: string, enum: [active, archived]}
+        owner_user_id: {$ref: "#/components/schemas/UserId"}
+        task_count: {type: integer, minimum: 0, description: Tasks visible to this caller.}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ProjectList:
+      type: object
+      required: [items, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/Project"}}
+        next_cursor: {type: [string, "null"], maxLength: 512}
+        has_more: {type: boolean}
+        total_visible: {type: [integer, "null"], minimum: 0}
+    CreateProjectRequest:
+      type: object
+      required: [key, name]
+      additionalProperties: false
+      properties:
+        key: {type: string, pattern: "^[A-Z][A-Z0-9]{1,9}$"}
+        name: {type: string, minLength: 1, maxLength: 160}
+        description: {type: [string, "null"], maxLength: 4000}
+        sensitivity:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          default: normal
+          description: Requires admin for any value other than normal.
+    UpdateProjectRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: Partial update. At least one field required. Server-owned fields are rejected.
+      properties:
+        name: {type: string, minLength: 1, maxLength: 160}
+        description: {type: [string, "null"], maxLength: 4000}
+        status: {type: string, enum: [active, archived]}
+        sensitivity:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          description: Requires admin, both to set and to change away from a non-normal value.
+        owner_user_id:
+          allOf: [{$ref: "#/components/schemas/UserId"}]
+          description: Must resolve to an active Membership in this tenant, else VALIDATION_FAILED.
+    DeleteProjectResponse:
+      type: object
+      required: [project_id, tenant_id, deleted_at, cascaded]
+      additionalProperties: false
+      properties:
+        project_id: {$ref: "#/components/schemas/ProjectId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        deleted_at: {type: string, format: date-time}
+        cascaded:
+          type: object
+          required: [tasks, comments]
+          additionalProperties: false
+          properties:
+            tasks: {type: integer, minimum: 0}
+            comments: {type: integer, minimum: 0}
+
+    # -- tasks ---------------------------------------------------------------
+
+    Attachment:
+      type: object
+      required: [attachment_id, filename, content_type, size_bytes, sensitivity, sha256, created_at]
+      additionalProperties: false
+      description: >-
+        Attachment metadata. Attachments are seeded by the fixture; v1 exposes no upload or
+        download endpoint. An attachment above the caller's sensitivity ceiling is omitted
+        from `Task.attachments` entirely rather than returned as a stub.
+      properties:
+        attachment_id: {$ref: "#/components/schemas/AttachmentId"}
+        filename: {type: string, maxLength: 255}
+        content_type: {type: string, maxLength: 128}
+        size_bytes: {type: integer, minimum: 0}
+        sensitivity: {$ref: "#/components/schemas/Sensitivity"}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        created_at: {type: string, format: date-time}
+    Task:
+      type: object
+      required: [task_id, project_id, tenant_id, title, status, priority, sensitivity, effective_sensitivity, created_by, created_at, updated_at]
+      additionalProperties: false
+      properties:
+        task_id: {$ref: "#/components/schemas/TaskId"}
+        project_id: {$ref: "#/components/schemas/ProjectId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        title: {type: string, maxLength: 200}
+        description: {type: [string, "null"], maxLength: 8000}
+        status: {$ref: "#/components/schemas/TaskStatus"}
+        priority: {$ref: "#/components/schemas/TaskPriority"}
+        sensitivity:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          description: The task's own label.
+        effective_sensitivity:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          description: max(project.sensitivity, task.sensitivity). This is what gates reachability.
+        assignee_user_id:
+          anyOf:
+            - {$ref: "#/components/schemas/UserId"}
+            - {type: "null"}
+        due_date: {type: [string, "null"], format: date}
+        labels: {type: array, maxItems: 20, items: {type: string, maxLength: 40}}
+        attachments: {type: array, maxItems: 50, items: {$ref: "#/components/schemas/Attachment"}}
+        comment_count: {type: integer, minimum: 0}
+        created_by: {$ref: "#/components/schemas/UserId"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TaskList:
+      type: object
+      required: [items, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/Task"}}
+        next_cursor: {type: [string, "null"], maxLength: 512}
+        has_more: {type: boolean}
+        total_visible: {type: [integer, "null"], minimum: 0}
+    CreateTaskRequest:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: [string, "null"], maxLength: 8000}
+        status: {allOf: [{$ref: "#/components/schemas/TaskStatus"}], default: todo}
+        priority: {allOf: [{$ref: "#/components/schemas/TaskPriority"}], default: normal}
+        sensitivity:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          default: normal
+          description: Requires admin for any value other than normal.
+        assignee_user_id:
+          anyOf:
+            - {$ref: "#/components/schemas/UserId"}
+            - {type: "null"}
+        due_date: {type: [string, "null"], format: date}
+        labels: {type: array, maxItems: 20, items: {type: string, maxLength: 40}}
+    UpdateTaskRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: Partial update. At least one field required. Server-owned fields are rejected.
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: [string, "null"], maxLength: 8000}
+        status: {$ref: "#/components/schemas/TaskStatus"}
+        priority: {$ref: "#/components/schemas/TaskPriority"}
+        sensitivity:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          description: Requires admin, both to set and to change away from a non-normal value.
+        due_date: {type: [string, "null"], format: date}
+        labels: {type: array, maxItems: 20, items: {type: string, maxLength: 40}}
+    AssignTaskRequest:
+      type: object
+      required: [assignee_user_id]
+      additionalProperties: false
+      properties:
+        assignee_user_id:
+          description: >-
+            Null unassigns. Otherwise must resolve to an active Membership in this tenant;
+            anything else yields a uniform VALIDATION_FAILED with issue `not_assignable`.
+          anyOf:
+            - {$ref: "#/components/schemas/UserId"}
+            - {type: "null"}
+    DeleteTaskResponse:
+      type: object
+      required: [task_id, project_id, tenant_id, deleted_at, cascaded]
+      additionalProperties: false
+      properties:
+        task_id: {$ref: "#/components/schemas/TaskId"}
+        project_id: {$ref: "#/components/schemas/ProjectId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        deleted_at: {type: string, format: date-time}
+        cascaded:
+          type: object
+          required: [comments]
+          additionalProperties: false
+          properties:
+            comments: {type: integer, minimum: 0}
+
+    # -- comments ------------------------------------------------------------
+
+    Comment:
+      type: object
+      required: [comment_id, task_id, project_id, tenant_id, author_user_id, body, created_at]
+      additionalProperties: false
+      properties:
+        comment_id: {$ref: "#/components/schemas/CommentId"}
+        task_id: {$ref: "#/components/schemas/TaskId"}
+        project_id: {$ref: "#/components/schemas/ProjectId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        author_user_id: {$ref: "#/components/schemas/UserId"}
+        body:
+          type: string
+          maxLength: 10000
+          description: >-
+            Opaque UTF-8 text. Stored and returned verbatim, never interpreted, expanded,
+            templated or rendered by the API, and never placed on an instruction path.
+        created_at: {type: string, format: date-time}
+        edited_at: {type: [string, "null"], format: date-time}
+    CommentList:
+      type: object
+      required: [items, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/Comment"}}
+        next_cursor: {type: [string, "null"], maxLength: 512}
+        has_more: {type: boolean}
+        total_visible: {type: [integer, "null"], minimum: 0}
+    CreateCommentRequest:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body: {type: string, minLength: 1, maxLength: 10000}
+    DeleteCommentResponse:
+      type: object
+      required: [comment_id, task_id, tenant_id, deleted_at]
+      additionalProperties: false
+      properties:
+        comment_id: {$ref: "#/components/schemas/CommentId"}
+        task_id: {$ref: "#/components/schemas/TaskId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        deleted_at: {type: string, format: date-time}
+
+    # -- search --------------------------------------------------------------
+
+    SearchHit:
+      type: object
+      required: [kind, id, tenant_id, title, sensitivity, score]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [project, task, comment]}
+        id:
+          type: string
+          description: The resource id. Always accompanied by the path components needed to address it.
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        project_id:
+          anyOf:
+            - {$ref: "#/components/schemas/ProjectId"}
+            - {type: "null"}
+        task_id:
+          anyOf:
+            - {$ref: "#/components/schemas/TaskId"}
+            - {type: "null"}
+        title: {type: string, maxLength: 200}
+        snippet: {type: [string, "null"], maxLength: 400}
+        sensitivity: {$ref: "#/components/schemas/Sensitivity"}
+        score: {type: number, minimum: 0}
+        updated_at: {type: string, format: date-time}
+    SearchResults:
+      type: object
+      required: [query, items, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        query: {type: string}
+        items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/SearchHit"}}
+        next_cursor: {type: [string, "null"], maxLength: 512}
+        has_more: {type: boolean}
+        total_visible: {type: [integer, "null"], minimum: 0}
+        took_ms: {type: integer, minimum: 0}
+
+    # -- exports -------------------------------------------------------------
+
+    RequestExportRequest:
+      type: object
+      required: [format, include]
+      additionalProperties: false
+      properties:
+        format: {type: string, enum: [json, csv]}
+        include:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, enum: [projects, tasks, comments]}
+        project_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          description: >-
+            Optional narrowing. Every id must resolve within this tenant; an unresolvable id
+            fails the whole request with NOT_FOUND rather than being silently dropped. Omit
+            to export everything within the requester's sensitivity ceiling.
+          items: {$ref: "#/components/schemas/ProjectId"}
+    ExportJob:
+      type: object
+      required: [export_id, tenant_id, status, format, include, requested_by, requested_at, sensitivity_ceiling]
+      additionalProperties: false
+      properties:
+        export_id: {$ref: "#/components/schemas/ExportId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        status: {type: string, enum: [pending, ready, failed, expired]}
+        format: {type: string, enum: [json, csv]}
+        include: {type: array, items: {type: string, enum: [projects, tasks, comments]}}
+        project_ids: {type: array, items: {$ref: "#/components/schemas/ProjectId"}}
+        requested_by: {$ref: "#/components/schemas/UserId"}
+        requested_at: {type: string, format: date-time}
+        ready_at: {type: [string, "null"], format: date-time}
+        expires_at: {type: [string, "null"], format: date-time, description: 24h after ready_at. After this the job resolves NOT_FOUND.}
+        record_count: {type: [integer, "null"], minimum: 0}
+        sensitivity_ceiling:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          description: Highest sensitivity the requester's role cleared at request time. The artifact never contains records above it.
+    ExportPayload:
+      type: object
+      required: [export_id, tenant_id, format, generated_at, record_count, checksum_sha256, data]
+      additionalProperties: false
+      properties:
+        export_id: {$ref: "#/components/schemas/ExportId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        format: {type: string, enum: [json, csv]}
+        generated_at: {type: string, format: date-time}
+        record_count: {type: integer, minimum: 0}
+        checksum_sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        sensitivity_ceiling_applied:
+          allOf: [{$ref: "#/components/schemas/Sensitivity"}]
+          description: The downloader's current ceiling, re-evaluated at download time.
+        data:
+          type: object
+          additionalProperties: false
+          properties:
+            projects: {type: array, items: {$ref: "#/components/schemas/Project"}}
+            tasks: {type: array, items: {$ref: "#/components/schemas/Task"}}
+            comments: {type: array, items: {$ref: "#/components/schemas/Comment"}}
+
+    # -- integrations --------------------------------------------------------
+
+    IntegrationCallRequest:
+      type: object
+      required: [connector, operation, payload]
+      additionalProperties: false
+      properties:
+        connector: {$ref: "#/components/schemas/Connector"}
+        operation:
+          type: string
+          maxLength: 64
+          pattern: "^[a-z][a-z0-9_.]{2,63}$"
+          description: >-
+            Operation name valid for the chosen connector. The pair (connector, operation)
+            selects the payload schema; an unknown pair yields VALIDATION_FAILED.
+          examples: [post_message, sync_issues, create_event, ingest_batch]
+        payload:
+          type: object
+          maxProperties: 50
+          description: >-
+            Validated against the schema selected by (connector, operation). Unknown fields
+            are rejected. Contains no destination information of any kind.
+        project_id:
+          description: Optional scoping to one project, which must resolve within this tenant.
+          anyOf:
+            - {$ref: "#/components/schemas/ProjectId"}
+            - {type: "null"}
+        idempotency_key: {type: [string, "null"], maxLength: 128}
+    IntegrationCallResult:
+      type: object
+      required: [call_id, tenant_id, connector, operation, status, dispatched_at]
+      additionalProperties: false
+      properties:
+        call_id: {$ref: "#/components/schemas/CallId"}
+        tenant_id: {$ref: "#/components/schemas/TenantId"}
+        connector: {$ref: "#/components/schemas/Connector"}
+        operation: {type: string}
+        status: {type: string, enum: [accepted, completed, rejected]}
+        result:
+          description: Connector response projection. Never contains credentials or destination detail.
+          anyOf:
+            - {type: object}
+            - {type: "null"}
+        dispatched_at: {type: string, format: date-time}
+        latency_ms: {type: [integer, "null"], minimum: 0}
+        idempotency_key: {type: [string, "null"]}
+
+    # -- internal surface types ----------------------------------------------
+
+    Ctx:
+      type: object
+      description: >-
+        The trusted context the gateway injects into every walker call. Any client-supplied
+        `ctx` is stripped unconditionally before injection. Its sha256 over canonical JSON is
+        carried as the `ctx_hash` claim of the 90-second gateway JWT, and every walker
+        verifies that hash before reading any field. `tenant.role` is transport only; walkers
+        re-read the Membership from the graph for every authorization decision.
+      required: [request_id, issued_at, principal, tenant, scopes, source, flags]
+      additionalProperties: false
+      properties:
+        request_id: {$ref: "#/components/schemas/RequestId"}
+        trace_id: {type: string}
+        issued_at: {type: string, format: date-time}
+        principal:
+          type: object
+          required: [kind, user_id, auth_age_s, amr]
+          additionalProperties: false
+          properties:
+            kind: {type: string, enum: [user, service_account]}
+            user_id: {$ref: "#/components/schemas/UserId"}
+            session_id:
+              anyOf:
+                - {$ref: "#/components/schemas/SessionId"}
+                - {type: "null"}
+            api_token_id:
+              anyOf:
+                - {$ref: "#/components/schemas/ApiTokenId"}
+                - {type: "null"}
+            auth_age_s: {type: integer, minimum: 0}
+            amr: {type: array, items: {type: string, enum: [pwd, api_token]}}
+        tenant:
+          description: Null on the tenant-less endpoints (all of /auth/* and GET|POST /tenants).
+          anyOf:
+            - type: object
+              required: [tenant_id, membership_id, role]
+              additionalProperties: false
+              properties:
+                tenant_id: {$ref: "#/components/schemas/TenantId"}
+                membership_id: {$ref: "#/components/schemas/MembershipId"}
+                role: {$ref: "#/components/schemas/Role"}
+            - {type: "null"}
+        scopes: {type: array, items: {type: string}}
+        source:
+          type: object
+          required: [ip]
+          additionalProperties: false
+          properties:
+            ip: {type: string}
+            source_id:
+              type: [string, "null"]
+              description: Value of X-Northwind-Source-Id. Recorded for provenance only. No effect on authorization or rate limiting.
+            user_agent: {type: [string, "null"], maxLength: 512}
+        flags:
+          type: object
+          required: [require_reauth, readonly_features]
+          additionalProperties: false
+          properties:
+            require_reauth: {type: boolean}
+            readonly_features:
+              type: array
+              items: {type: string, enum: [projects, tasks, comments, exports, integrations, all]}
+    WalkerRequest:
+      type: object
+      description: >-
+        Body of POST /walker/<WalkerName> on the Jac upstream. Flat object of the walker's
+        `has` fields — every public path parameter, query parameter and body field of the
+        corresponding operation, by the same name — plus the injected `ctx`.
+      required: [ctx]
+      properties:
+        ctx: {$ref: "#/components/schemas/Ctx"}
+    WalkerResponse:
+      type: object
+      description: >-
+        Response of POST /walker/<WalkerName>. Jac appends each `report` to `.reports`. Every
+        walker in this application reports exactly once. The gateway unwraps `reports[0]` as
+        the public response body and maps `status` to the public HTTP status.
+      required: [status, reports]
+      properties:
+        status: {type: integer}
+        reports:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items: {}
+    AuditEvent:
+      type: object
+      description: >-
+        Structured audit record emitted per the rules in `x-northwind-audit`. Not returned by
+        any public endpoint; consumed by the monitoring track. Never contains passwords,
+        password hashes, session values, API token values, invite tokens, CSRF tokens, or the
+        gateway JWT.
+      required: [event_id, ts, action, outcome, request_id, http, principal, source]
+      additionalProperties: false
+      properties:
+        event_id: {$ref: "#/components/schemas/EventId"}
+        ts: {type: string, format: date-time}
+        action: {$ref: "#/components/schemas/AuditAction"}
+        outcome: {type: string, enum: [allowed, denied]}
+        secondary: {type: boolean, default: false}
+        deny_reason:
+          anyOf:
+            - {$ref: "#/components/schemas/DenyReason"}
+            - {type: "null"}
+        request_id: {$ref: "#/components/schemas/RequestId"}
+        http:
+          type: object
+          required: [method, path_template, status]
+          additionalProperties: false
+          properties:
+            method: {type: string, enum: [GET, POST, PATCH, DELETE]}
+            path_template: {type: string, examples: ["/tenants/{tenant_id}/projects/{project_id}"]}
+            path: {type: string}
+            status: {type: integer, minimum: 100, maximum: 599}
+        principal:
+          type: object
+          required: [kind]
+          additionalProperties: false
+          properties:
+            kind: {type: string, enum: [user, service_account, anonymous]}
+            user_id:
+              anyOf:
+                - {$ref: "#/components/schemas/UserId"}
+                - {type: "null"}
+            session_id:
+              anyOf:
+                - {$ref: "#/components/schemas/SessionId"}
+                - {type: "null"}
+            api_token_id:
+              anyOf:
+                - {$ref: "#/components/schemas/ApiTokenId"}
+                - {type: "null"}
+        tenant_id:
+          anyOf:
+            - {$ref: "#/components/schemas/TenantId"}
+            - {type: "null"}
+        membership_id:
+          anyOf:
+            - {$ref: "#/components/schemas/MembershipId"}
+            - {type: "null"}
+        role:
+          anyOf:
+            - {$ref: "#/components/schemas/Role"}
+            - {type: "null"}
+        target:
+          anyOf:
+            - type: object
+              required: [kind, id]
+              additionalProperties: false
+              properties:
+                kind: {type: string, enum: [tenant, membership, invite, project, task, comment, attachment, export, integration, session, user]}
+                id: {type: string}
+                sensitivity:
+                  anyOf:
+                    - {$ref: "#/components/schemas/Sensitivity"}
+                    - {type: "null"}
+            - {type: "null"}
+        source:
+          type: object
+          required: [ip]
+          additionalProperties: false
+          properties:
+            ip: {type: string}
+            source_id: {type: [string, "null"]}
+            user_agent: {type: [string, "null"], maxLength: 512}
+        latency_ms: {type: [integer, "null"], minimum: 0}
+        meta: {type: object}
+
 # ---------------------------------------------------------------------------
-# END PART 2
+# The mapping other tracks consume: public -> walker -> role -> audit action.
 # ---------------------------------------------------------------------------
+
+x-northwind-mapping:
+  - {method: POST,   path: /auth/register,                                                        walker: RegisterUser,      required_role: public,        audit_action: auth.register,        success: 201, mutating: true}
+  - {method: POST,   path: /auth/login,                                                           walker: LoginUser,         required_role: public,        audit_action: auth.login,           audit_action_on_failure: auth.login_failed, success: 200, mutating: true}
+  - {method: POST,   path: /auth/logout,                                                          walker: LogoutSession,     required_role: authenticated, audit_action: auth.logout,          audit_secondary: [auth.token_revoked], success: 200, mutating: true}
+  - {method: POST,   path: /auth/refresh,                                                         walker: RefreshSession,    required_role: authenticated, audit_action: auth.token_issued,    audit_secondary: [auth.token_revoked], audit_action_on_expiry: auth.session_expired, success: 200, mutating: true}
+  - {method: POST,   path: /auth/reauth,                                                          walker: ReauthSession,     required_role: authenticated, audit_action: auth.reauth_required, audit_secondary: [auth.token_issued], success: 200, mutating: true}
+  - {method: GET,    path: /auth/session,                                                         walker: GetSession,        required_role: authenticated, audit_action: null,                 audit_note: "no action in the closed vocabulary; none emitted on 200", success: 200, mutating: false}
+  - {method: GET,    path: /tenants,                                                              walker: ListMyTenants,     required_role: authenticated, audit_action: tenant.read,          success: 200, mutating: false}
+  - {method: POST,   path: /tenants,                                                              walker: CreateTenant,      required_role: authenticated, audit_action: tenant.create,        success: 201, mutating: true}
+  - {method: GET,    path: "/tenants/{tenant_id}",                                                walker: ReadTenant,        required_role: viewer,        audit_action: tenant.read,          success: 200, mutating: false}
+  - {method: GET,    path: "/tenants/{tenant_id}/members",                                        walker: ListMembers,       required_role: viewer,        audit_action: tenant.read,          success: 200, mutating: false}
+  - {method: POST,   path: "/tenants/{tenant_id}/members/invites",                                walker: InviteMember,      required_role: admin,         audit_action: member.invite,        success: 201, mutating: true}
+  - {method: POST,   path: "/tenants/{tenant_id}/invites/accept",                                 walker: AcceptInvite,      required_role: authenticated, audit_action: member.accept,        success: 200, mutating: true}
+  - {method: PATCH,  path: "/tenants/{tenant_id}/members/{membership_id}",                        walker: ChangeMemberRole,  required_role: admin,         audit_action: member.role_change,   success: 200, mutating: true, step_up: true}
+  - {method: DELETE, path: "/tenants/{tenant_id}/members/{membership_id}",                        walker: RemoveMember,      required_role: admin,         audit_action: member.remove,        success: 200, mutating: true, step_up: true}
+  - {method: POST,   path: "/tenants/{tenant_id}/projects",                                       walker: CreateProject,     required_role: member,        audit_action: project.create,       success: 201, mutating: true}
+  - {method: GET,    path: "/tenants/{tenant_id}/projects",                                       walker: ListProjects,      required_role: viewer,        audit_action: project.list,         success: 200, mutating: false}
+  - {method: GET,    path: "/tenants/{tenant_id}/projects/{project_id}",                          walker: ReadProject,       required_role: viewer,        audit_action: project.read,         success: 200, mutating: false}
+  - {method: PATCH,  path: "/tenants/{tenant_id}/projects/{project_id}",                          walker: UpdateProject,     required_role: member,        audit_action: project.update,       success: 200, mutating: true}
+  - {method: DELETE, path: "/tenants/{tenant_id}/projects/{project_id}",                          walker: DeleteProject,     required_role: admin,         audit_action: project.delete,       success: 200, mutating: true}
+  - {method: POST,   path: "/tenants/{tenant_id}/projects/{project_id}/tasks",                    walker: CreateTask,        required_role: member,        audit_action: task.create,          success: 201, mutating: true}
+  - {method: GET,    path: "/tenants/{tenant_id}/projects/{project_id}/tasks",                    walker: ListTasks,         required_role: viewer,        audit_action: task.list,            success: 200, mutating: false}
+  - {method: GET,    path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",          walker: ReadTask,          required_role: viewer,        audit_action: task.read,            success: 200, mutating: false}
+  - {method: PATCH,  path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",          walker: UpdateTask,        required_role: member,        audit_action: task.update,          success: 200, mutating: true}
+  - {method: DELETE, path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",          walker: DeleteTask,        required_role: admin,         audit_action: task.delete,          success: 200, mutating: true}
+  - {method: POST,   path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/assign",   walker: AssignTask,        required_role: member,        audit_action: task.assign,          success: 200, mutating: true}
+  - {method: POST,   path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments", walker: CreateComment,     required_role: member,        audit_action: comment.create,       success: 201, mutating: true}
+  - {method: GET,    path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments", walker: ListComments,      required_role: viewer,        audit_action: comment.list,         success: 200, mutating: false}
+  - {method: GET,    path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", walker: ReadComment,   required_role: viewer, audit_action: comment.read,   success: 200, mutating: false}
+  - {method: DELETE, path: "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", walker: DeleteComment, required_role: member, audit_action: comment.delete, success: 200, mutating: true, note: "author, or admin for someone else's comment"}
+  - {method: GET,    path: "/tenants/{tenant_id}/search",                                         walker: SearchTenant,      required_role: viewer,        audit_action: search.query,         success: 200, mutating: false}
+  - {method: POST,   path: "/tenants/{tenant_id}/exports",                                        walker: RequestExport,     required_role: admin,         audit_action: export.request,       success: 202, mutating: true, step_up: true}
+  - {method: GET,    path: "/tenants/{tenant_id}/exports/{export_id}",                            walker: DownloadExport,    required_role: admin,         audit_action: export.download,      success: 200, mutating: false, step_up: true, note: "202 while the job is pending"}
+  - {method: POST,   path: "/tenants/{tenant_id}/integrations/call",                              walker: IntegrationCall,   required_role: "service account: member + scope integration:call; user session: admin + step-up", audit_action: integration.call, success: 200, mutating: true, step_up: true}
