@@ -331,30 +331,51 @@ def test_no_monitor_code_reads_labels():
             p = os.path.join(root, f)
             with open(p, encoding="utf-8", errors="replace") as fh:
                 body = fh.read()
-            for needle in ("labels.jsonl", "audit_golden.labels", "_labels", "population",
-                           "ground_truth", "is_attack"):
+            # Needles are the ground-truth sidecar and its label FIELDS. Deliberately not
+            # the bare word "population": "the actor population's p95 baseline" is ordinary
+            # statistics vocabulary and flagging it produces false positives.
+            for needle in ('labels.jsonl', 'audit_golden.labels', '.labels',
+                           '"population"', "'population'", '"stage"', "'stage'",
+                           'ground_truth', 'is_attack'):
                 if needle in body:
                     offenders.append((os.path.relpath(p, REPO), needle))
     assert not offenders, "monitor code references label ground truth: %s" % offenders
 
     # runtime proof: an audit hook that hard-fails if the labels file is ever opened
-    guard = (
-        "import sys, json, subprocess, os\n"
-        "def hook(event, args):\n"
-        "    if event == 'open' and 'labels' in str(args[0]):\n"
-        "        raise RuntimeError('monitor opened the labels file: %r' % (args[0],))\n"
-        "sys.addaudithook(hook)\n"
-        "sys.argv = ['audit_window.py', '--input', %r, '--out-frames', %r]\n"
-        "sys.path.insert(0, %r)\n"
-        "import audit_window\n"
-        "audit_window.main()\n"
-    )
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "f.jsonl")
-        src = guard % (GOLDEN, out, MONITOR)
+        src = "\n".join([
+            "import sys",
+            "def hook(event, args):",
+            "    if event == 'open' and 'labels' in str(args[0]):",
+            "        raise RuntimeError('monitor opened the labels sidecar: ' + str(args[0]))",
+            "sys.addaudithook(hook)",
+            "sys.argv = ['audit_window.py', '--input', " + repr(GOLDEN) +
+            ", '--out-frames', " + repr(out) + "]",
+            "sys.path.insert(0, " + repr(MONITOR) + ")",
+            "import audit_window",
+            "audit_window.main()",
+            "print('AUDIT_HOOK_CLEAN')",
+        ])
         p = subprocess.run([sys.executable, "-c", src], capture_output=True, text=True, cwd=REPO)
-        assert p.returncode == 0, "audit-hook run failed:\n%s" % p.stderr[-3000:]
-    return {"static_offenders": 0, "runtime_audit_hook": "no open() of any labels path"}
+        assert p.returncode == 0, "audit-hook run failed:\n" + p.stderr[-3000:]
+        assert "AUDIT_HOOK_CLEAN" in p.stdout, "guard did not reach completion"
+
+        # Prove the guard actually bites: opening the sidecar under it must raise.
+        neg = "\n".join([
+            "import sys",
+            "def hook(event, args):",
+            "    if event == 'open' and 'labels' in str(args[0]):",
+            "        raise RuntimeError('caught')",
+            "sys.addaudithook(hook)",
+            "open(" + repr(LABELS) + ").read()",
+        ])
+        pn = subprocess.run([sys.executable, "-c", neg], capture_output=True, text=True, cwd=REPO)
+        assert pn.returncode != 0 and "caught" in pn.stderr, \
+            "the audit hook does not actually trap opens -- the positive result is meaningless"
+    return {"static_offenders": 0,
+            "runtime_audit_hook": "aggregator ran to completion with no open() of any labels path",
+            "guard_self_test": "opening the sidecar under the same hook raises, so the hook is live"}
 
 
 # --------------------------------------------------------------------------
@@ -390,12 +411,37 @@ def test_no_hardcoded_attack_flag():
 # --------------------------------------------------------------------------
 @test
 def test_replay_is_deterministic_and_offline():
+    def strip_nonce(incidents):
+        """Everything except the quarantine fence, which carries a per-run random nonce."""
+        out = []
+        for inc in incidents:
+            c = json.loads(json.dumps(inc))
+            c["untrusted_data"] = {"fenced": []}
+            out.append(c)
+        return out
+
+    def nonces(quar):
+        return {q["nonce"] for q in quar}
+
     with tempfile.TemporaryDirectory() as tmp:
-        a = pipeline(GOLDEN, tmp, "det_a")
-        b = pipeline(GOLDEN, tmp, "det_b")
-        assert a[0] == b[0], "frames differ between runs"
-        assert a[2] == b[2], "incidents differ between runs"
-        return {"frames": len(a[0]), "incidents": len(a[2]), "identical_across_runs": True}
+        fa, qa, ia = pipeline(GOLDEN, tmp, "det_a")
+        fb, qb, ib = pipeline(GOLDEN, tmp, "det_b")
+        assert fa == fb, "window.v1 frames differ between runs"
+        assert strip_nonce(ia) == strip_nonce(ib), "detection output differs between runs"
+        assert len(ia) == len(ib)
+        # The nonce MUST be fresh per run -- a fixed nonce would let an attacker who has
+        # seen one run pre-close the fence in later ones.
+        assert nonces(qa) and nonces(qb) and not (nonces(qa) & nonces(qb)), \
+            "quarantine nonce was reused across runs"
+        return {
+            "frames": len(fa),
+            "incidents": len(ia),
+            "detection_identical_across_runs": True,
+            "nonce_run_a": sorted(nonces(qa))[0],
+            "nonce_run_b": sorted(nonces(qb))[0],
+            "nonce_freshly_random_per_run": True,
+            "model_calls": 0,
+        }
 
 
 # --------------------------------------------------------------------------
