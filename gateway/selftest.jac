@@ -23,7 +23,8 @@ with entry:__main__ {
         "user_agent_hash": ua_hash("curl/8"), "client_fp": client_fp("curl/8", "en", "gzip"),
         "session_id": "sess_x", "token_id": "", "service": "web",
         "route": "/api/v1/tenants", "http_method": "GET", "csrf_ok": True,
-        "received_at_ms": now, "sig_alg": "HMAC-SHA256", "issued_at_ms": now
+        "received_at_ms": now, "sig_alg": "HMAC-SHA256", "issued_at_ms": now,
+        "session_auth_at_ms": now
     };
     ctx = signed_ctx(base, st.ctx_signing_key);
     print("ctx keys:", len(ctx), "sig len:", len(ctx["sig"]));

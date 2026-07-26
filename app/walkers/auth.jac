@@ -8,8 +8,8 @@
 #    and audit happen inside that one call, so there is no window in which this
 #    walker has touched a record it was not yet allowed to touch.
 #
-# 2. No walker here calls emit_audit(). guard() already emitted exactly one
-#    AuditEvent for the request, and `result_count` / `outcome` in that row are
+# 2. No walker here writes its own audit event. guard() already emitted exactly
+#    one AuditEvent for the request, and `result_count` / `outcome` in it are
 #    the monitor's signals. A second emission from application code would
 #    double-count and corrupt them. The only exceptions are Register and Login,
 #    which run BEFORE any principal exists and therefore have nothing for guard()
@@ -191,7 +191,17 @@ walker:pub Login {
                 denied = True;
             }
         }
-        if not denied {
+        # An empty tenant_id logs in WITHOUT a workspace. The resulting session
+        # is tenantless, and guard() therefore denies it every tenant-scoped
+        # action with TENANT_MISMATCH; the only things it can reach are the two
+        # actions that exist precisely to acquire a tenancy -- `tenant.create`
+        # (TENANTLESS_ACTIONS) and `member.accept` (MEMBERSHIP_EXEMPT_ACTIONS).
+        # Without this, a freshly registered principal could never obtain a
+        # session and could never create their first tenant: membership would be
+        # required to log in, and logging in would be required to gain
+        # membership. It widens nothing -- a tenantless session holds no role
+        # anywhere and resolves no resource.
+        if not denied and self.tenant_id != "" {
             member_ok: bool = False;
             t = tenant_by_id(self.tenant_id);
             if t is not None {

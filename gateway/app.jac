@@ -333,6 +333,12 @@ async def handle(request: Any) -> Any {
     principal_id = "";
     token_id = "";
     identity = "";
+    # Step-up freshness, stamped into the signed ctx below. 0 means UNKNOWN and
+    # guard() reads it as infinitely old, so every path that fails to set it
+    # (no session, bearer token, expired session) fails CLOSED for the
+    # step-up-protected actions. This is the ONLY place it is sourced: it comes
+    # off the server-side session record, never off the request.
+    session_auth_at_ms = 0;
     bearer = request.headers.get("authorization", "");
     is_bearer = bearer.lower().startswith("bearer ");
 
@@ -341,6 +347,10 @@ async def handle(request: Any) -> Any {
         principal_id = session.principal_id;
         token_id = session.token_id;
         identity = principal_id;
+        # `authed_at_ms` advances on password login and on a completed re-auth
+        # (SessionStore.rotate(reauth=True)) -- NOT on ordinary activity, which
+        # only moves `last_seen_ms`. That distinction is the whole control.
+        session_auth_at_ms = session.authed_at_ms;
     } elif is_bearer {
         # An API token authenticates without ambient authority; the token itself
         # is resolved upstream. Key the identity bucket on a hash of it so one
@@ -430,7 +440,8 @@ async def handle(request: Any) -> Any {
         "csrf_ok": csrf_ok,
         "received_at_ms": issued,
         "sig_alg": SIG_ALG,
-        "issued_at_ms": issued
+        "issued_at_ms": issued,
+        "session_auth_at_ms": session_auth_at_ms
     }, st.ctx_signing_key);
 
     scrub = strip_client_ctx(body);

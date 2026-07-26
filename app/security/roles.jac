@@ -109,6 +109,22 @@ glob:pub READ_ACTIONS: list = [
     "auth.session_expired"
 ];
 
+# Operations that ALWAYS require a recent password, containment control or not.
+# Mandated by contracts/req_ctx_contract.jac (the `session_auth_at_ms` note):
+# these four are the ones marked † in contracts/app_api.openapi.yaml, and they
+# demand `now_ms - session_auth_at_ms <= 900000` or a REAUTH_REQUIRED denial.
+#
+# The common thread is that each one is irreversible or exfiltrating: a stolen
+# live session should be able to browse, but it should NOT be able to hand
+# itself a role, delete a colleague's access, or walk out with the dataset
+# without the human at the keyboard proving they are still there.
+glob:pub STEPUP_ACTIONS: list = [
+    "member.role_change",
+    "member.remove",
+    "export.request",
+    "export.download"
+];
+
 # Actions that must still work while a force_reauth control is active --
 # otherwise the control locks the user out of the very flow that clears it.
 glob:pub REAUTH_ALLOWED_ACTIONS: list = [
@@ -150,6 +166,11 @@ def:pub survives_reauth(action: str) -> bool {
     return action in REAUTH_ALLOWED_ACTIONS;
 }
 
+"""True when the action demands a recent password regardless of any control."""
+def:pub requires_stepup(action: str) -> bool {
+    return action in STEPUP_ACTIONS;
+}
+
 """Actions in ACTIONS that have no ACTION_MIN_ROLE entry. Must always be empty:
 a missing entry means an action nobody assigned a role to."""
 def:pub policy_gaps() -> list {
@@ -162,6 +183,18 @@ def:pub policy_strays() -> list {
     return [a for a in ACTION_MIN_ROLE.keys() if a not in ACTIONS];
 }
 
+"""Entries in STEPUP_ACTIONS that are not real actions.
+
+Must always be empty. Unlike ACTION_MIN_ROLE -- where an unknown action falls
+back to "owner" and therefore fails CLOSED -- a typo in STEPUP_ACTIONS fails
+OPEN: `requires_stepup("member.role_chnage")` is simply False, the gate never
+fires, and the step-up requirement silently evaporates with no error anywhere.
+That is the one failure mode this control cannot tolerate, so it is checked at
+import time rather than trusted."""
+def:pub stepup_strays() -> list {
+    return [a for a in STEPUP_ACTIONS if a not in ACTIONS];
+}
+
 """Raise unless the policy table covers exactly the frozen action vocabulary."""
 def:pub assert_policy_complete() -> bool {
     gaps = policy_gaps();
@@ -171,6 +204,15 @@ def:pub assert_policy_complete() -> bool {
             "FATAL: authorization policy does not match the frozen action "
             + "vocabulary. Unassigned actions: " + str(gaps)
             + " | unknown entries: " + str(strays)
+        );
+    }
+    su_strays = stepup_strays();
+    if len(su_strays) > 0 {
+        raise RuntimeError(
+            "FATAL: STEPUP_ACTIONS names actions outside the frozen "
+            + "vocabulary: " + str(su_strays)
+            + ". A typo here disables a step-up requirement SILENTLY, so it "
+            + "stops the application instead."
         );
     }
     return True;

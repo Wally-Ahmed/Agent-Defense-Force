@@ -43,7 +43,7 @@ import from app.security.controls {
 }
 import from app.security.roles {
     min_role_for, role_satisfies, is_write_action, survives_reauth,
-    TENANTLESS_ACTIONS, MEMBERSHIP_EXEMPT_ACTIONS
+    requires_stepup, TENANTLESS_ACTIONS, MEMBERSHIP_EXEMPT_ACTIONS
 }
 import from app.security.audit { emit_audit }
 
@@ -198,6 +198,8 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     src_asn = ctx.get("src_asn", "");
     session_id = ctx.get("session_id", "");
     token_id = ctx.get("token_id", "");
+    # Signed by the gateway from the session record; see the step-up block below.
+    auth_at_ms = ctx.get("session_auth_at_ms", 0);
 
     base: dict = {
         "action": action,
@@ -225,7 +227,6 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     # ----------------------------------------------------------------------
     principal: Principal | None = None;
     actor_tenant_id = "";
-    last_auth_at = 0;
     token_scope = "";
 
     if session_id != "" {
@@ -245,7 +246,6 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
             return _decide(base, False, "NO_SESSION");
         }
         actor_tenant_id = session.tenant_id;
-        last_auth_at = session.last_auth_at;
         base["auth_method"] = "session";
 
     } elif token_id != "" {
@@ -306,17 +306,46 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     if has_control("block_source", source_keys(src_ip, src_asn), now) {
         return _decide(base, False, "SOURCE_BLOCKED", principal=actor);
     }
+    # Step-up authentication. Demanded in two independent circumstances:
+    #
+    #   (a) ALWAYS, for the four irreversible / exfiltrating operations listed
+    #       in roles.STEPUP_ACTIONS. contracts/req_ctx_contract.jac mandates
+    #       `now_ms - session_auth_at_ms <= 900000` for these. A stolen live
+    #       session may browse; it may not grant itself a role, delete a
+    #       colleague, or walk out with the dataset without the human at the
+    #       keyboard proving they are still there.
+    #   (b) ON DEMAND, when the responder has written a `force_reauth` control.
+    #
+    # The freshness clock is `session_auth_at_ms` from the VERIFIED ctx -- the
+    # gateway stamps it from the session record and it is covered by the HMAC,
+    # so a client cannot forge recency. It advances only on a password login or
+    # a completed re-auth, never on mere activity: browsing for an hour is not
+    # evidence that the human is still at the keyboard.
     if not survives_reauth(action) {
         reauth_keys = [key_principal(actor.principal_id)];
         if actor_tenant_id != "" {
             reauth_keys.append(key_tenant(actor_tenant_id));
         }
-        if has_control("force_reauth", reauth_keys, now) {
-            # An API token cannot present a password, so it can never satisfy a
-            # step-up. Only a session with a RECENT password authentication may
-            # proceed.
-            stale = base["auth_method"] != "session" or (now - last_auth_at) > REAUTH_MAX_AGE_MS;
-            if stale {
+        demanded = requires_stepup(action) or has_control("force_reauth", reauth_keys, now);
+        if demanded {
+            # An API token can never present a password, so it can never
+            # satisfy a step-up -- it is refused without consulting the clock.
+            if base["auth_method"] != "session" {
+                return _decide(base, False, "REAUTH_REQUIRED", principal=actor);
+            }
+            # 0 means UNKNOWN, and unknown is rejected EXPLICITLY rather than
+            # left to `now - 0` happening to exceed the window. Relying on that
+            # arithmetic would silently fail open the day someone rebases the
+            # clock or switches the field to a relative offset.
+            if auth_at_ms <= 0 {
+                return _decide(base, False, "REAUTH_REQUIRED", principal=actor);
+            }
+            if (now - auth_at_ms) > REAUTH_MAX_AGE_MS {
+                return _decide(base, False, "REAUTH_REQUIRED", principal=actor);
+            }
+            # A ctx claiming a FUTURE authentication is a forged or skewed
+            # clock; freshness must never be obtainable by claiming tomorrow.
+            if (auth_at_ms - now) > 1000 {
                 return _decide(base, False, "REAUTH_REQUIRED", principal=actor);
             }
         }
@@ -351,7 +380,14 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     # The credential is bound to ONE tenant. Presenting it against another is a
     # crossing attempt, and is the single highest-signal event this system
     # produces -- vocab.md escalates TENANT_MISMATCH to `high` unconditionally.
-    if actor_tenant_id != tenant_id {
+    #
+    # `member.accept` is the one action exempt from this, and it must be: it is
+    # how a principal ENTERS a tenant, so demanding they already be scoped to
+    # that tenant is circular. The invite token is the credential for this step
+    # -- 32 bytes of `secrets` entropy, stored only as a SHA-256 hash, and
+    # matched by traversal from this tenant alone. A caller who guesses a
+    # tenant_id still holds nothing.
+    if actor_tenant_id != tenant_id and action not in MEMBERSHIP_EXEMPT_ACTIONS {
         return _decide(base, False, "TENANT_MISMATCH", tenant=tenant, principal=actor);
     }
 

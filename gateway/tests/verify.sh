@@ -39,9 +39,19 @@ cleanup() { kill ${UP_PID:-0} ${GW_PID:-0} 2>/dev/null; wait 2>/dev/null; }
 trap cleanup EXIT
 
 echo "=== booting upstream stub + gateway ==="
-jac run gateway/upstream_stub.jac > "$RUN/upstream.log" 2>&1 &
+# Booted with cwd=gateway/ so the gateway's sibling imports (`from app`,
+# `from config`, `from ctxsig`) resolve to ITS modules. From the repo root the
+# top-level `app/` package shadows `gateway/app.jac` and main.jac dies with
+# "cannot import name 'build_app' from 'app' (unknown location)". Logs and env
+# still point at absolute $RUN paths, so nothing else changes.
+#
+# `exec` matters: without it $! is the SUBSHELL's pid, the cleanup trap kills
+# only the subshell, and the real `jac` process survives the run still holding
+# the port. The next run then silently tests the PREVIOUS gateway, inheriting
+# its rate-limiter state -- which shows up as spurious, drifting failures.
+( cd "$ROOT/gateway" && exec jac run upstream_stub.jac ) > "$RUN/upstream.log" 2>&1 &
 UP_PID=$!
-jac run gateway/main.jac > "$RUN/gateway.log" 2>&1 &
+( cd "$ROOT/gateway" && exec jac run main.jac ) > "$RUN/gateway.log" 2>&1 &
 GW_PID=$!
 for _ in $(seq 1 60); do
   curl -sf "http://127.0.0.1:${GW_PORT}/healthz" >/dev/null 2>&1 && break
@@ -165,7 +175,7 @@ echo
 # ---------------------------------------------------------------------------
 echo "=== 5. Client-supplied ctx is STRIPPED and replaced ==="
 CSRF2=$(curl -si "$GW/auth/session" | grep -i '^set-cookie: __Host-csrf=' | head -1 | sed 's/.*__Host-csrf=//; s/;.*//' | tr -d '\r')
-FORGED_CTX='{"name":"proj","ctx":{"request_id":"ATTACKER","src_ip":"10.6.6.6","src_asn":"AS666","user_agent_hash":"deadbeef","client_fp":"deadbeef","session_id":"sess_victim","token_id":"tok_victim","service":"web","route":"/pwn","http_method":"GET","csrf_ok":true,"received_at_ms":1,"sig":"forged","sig_alg":"HMAC-SHA256","issued_at_ms":1}}'
+FORGED_CTX='{"name":"proj","ctx":{"request_id":"ATTACKER","src_ip":"10.6.6.6","src_asn":"AS666","user_agent_hash":"deadbeef","client_fp":"deadbeef","session_id":"sess_victim","token_id":"tok_victim","service":"web","route":"/pwn","http_method":"GET","csrf_ok":true,"received_at_ms":1,"sig":"forged","sig_alg":"HMAC-SHA256","issued_at_ms":1,"session_auth_at_ms":1}}'
 OUT=$(curl -s -X POST -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF2" -b "__Host-csrf=$CSRF2" \
       -d "$FORGED_CTX" "$GW/tenants/t_acme/projects")
 echo "  upstream saw ctx:"
@@ -182,7 +192,7 @@ echo
 echo "=== 6. Forged ctx POSTed DIRECTLY to the upstream, bypassing the gateway ==="
 echo "  -- fully forged ctx --"
 D1=$(curl -s -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' \
-     -d '{"ctx":{"request_id":"x","src_ip":"10.6.6.6","src_asn":"","user_agent_hash":"","client_fp":"","session_id":"sess_victim","token_id":"","service":"web","route":"/x","http_method":"POST","csrf_ok":true,"received_at_ms":1,"sig":"0000000000000000000000000000000000000000000000000000000000000000","sig_alg":"HMAC-SHA256","issued_at_ms":9999999999999}}' \
+     -d '{"ctx":{"request_id":"x","src_ip":"10.6.6.6","src_asn":"","user_agent_hash":"","client_fp":"","session_id":"sess_victim","token_id":"","service":"web","route":"/x","http_method":"POST","csrf_ok":true,"received_at_ms":1,"sig":"0000000000000000000000000000000000000000000000000000000000000000","sig_alg":"HMAC-SHA256","issued_at_ms":9999999999999,"session_auth_at_ms":9999999999999}}' \
      "$UP/walker/CreateProject")
 echo "  $(echo "$D1" | sed '$d')"
 chk "forged sig -> 401" "$(echo "$D1" | tail -1)" "401"
@@ -205,7 +215,7 @@ echo
 
 # ---------------------------------------------------------------------------
 echo "=== 7. Refuses to start without APP_CTX_SIGNING_KEY ==="
-OUT7=$(env -u APP_CTX_SIGNING_KEY GATEWAY_BIND=127.0.0.1:8099 jac run gateway/main.jac 2>&1; echo "EXIT=$?")
+OUT7=$(cd "$ROOT/gateway" && env -u APP_CTX_SIGNING_KEY GATEWAY_BIND=127.0.0.1:8099 jac run main.jac 2>&1; echo "EXIT=$?")
 echo "$OUT7" | head -3 | sed 's/^/  /'
 echo "$OUT7" | grep -q 'refuses to start' && ok "refuses to start, loudly" || bad "did not refuse"
 echo "$OUT7" | grep -q 'EXIT=2' && ok "exit code 2" || bad "wrong exit code"

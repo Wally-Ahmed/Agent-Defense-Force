@@ -40,7 +40,8 @@ glob:pub CTX_FIELDS: list = [
     "received_at_ms",
     "sig",
     "sig_alg",
-    "issued_at_ms"
+    "issued_at_ms",
+    "session_auth_at_ms"
 ];
 
 # Everything that goes into the signature: all fields except `sig`.
@@ -58,11 +59,12 @@ glob:pub SIGNED_FIELDS: list = [
     "csrf_ok",
     "received_at_ms",
     "sig_alg",
-    "issued_at_ms"
+    "issued_at_ms",
+    "session_auth_at_ms"
 ];
 
 glob:pub BOOL_FIELDS: list = ["csrf_ok"];
-glob:pub INT_FIELDS: list = ["received_at_ms", "issued_at_ms"];
+glob:pub INT_FIELDS: list = ["received_at_ms", "issued_at_ms", "session_auth_at_ms"];
 
 glob:pub SIG_ALG: str = "HMAC-SHA256";
 glob:pub CTX_MAX_AGE_MS: int = 30000;

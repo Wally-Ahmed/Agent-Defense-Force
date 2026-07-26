@@ -1,8 +1,8 @@
 # app/walkers/tenancy.jac — tenants, invitations and membership roles.
 #
 # Every walker here is `:priv` and calls guard() as its FIRST statement. None of
-# them calls emit_audit(): guard() already wrote exactly one AuditEvent for the
-# request, and a second emission would double-count the monitor's signals. The
+# them writes its own audit event: guard() already wrote exactly one AuditEvent
+# for the request, and a second would double-count the monitor's signals. The
 # post-guard rejections below therefore report an error and emit NOTHING — the
 # audit row for the request is guard()'s allow, which is the truth: the caller
 # WAS authorized to attempt the operation, and the operation was refused on a
@@ -29,10 +29,10 @@ import from app.security.passwords { new_secret, token_digest }
 import from app.security.roles { ROLES, rank_of }
 import from app.model.graph {
     Platform, Tenant, Membership, Principal, Invite,
-    Hosts, HasMember, Identifies, Invited, get_platform
+    Hosts, HasMember, Identifies, Invited, get_platform, Session
 }
 import from app.model.resolve {
-    membership_of, memberships_of, invite_by_hash
+    membership_of, memberships_of, invite_by_hash, session_by_id
 }
 
 walker:priv CreateTenant {
@@ -80,6 +80,25 @@ walker:priv CreateTenant {
             created_at=now
         ))[0];
         membership +>:Identifies:+> actor;
+
+        # Bind the caller's TENANTLESS session to the tenant they just created.
+        # A session is tenant-scoped, so without this the founder would create a
+        # workspace and immediately be denied TENANT_MISMATCH on every action
+        # inside it until they logged in again.
+        #
+        # This is a re-scope, never a widening: the session is looked up by the
+        # id in the VERIFIED ctx (so it is the caller's own), it is moved only
+        # if it is currently unscoped, and the destination is a tenant in which
+        # this principal is, as of three lines ago, the owner. A session already
+        # bound to some other tenant is left exactly where it is.
+        bound: str = ctx_from(self.ctx).session_id;
+        current = session_by_id(bound);
+        if current is not None {
+            live = cast(Session, current);
+            if live.tenant_id == "" and live.principal_id == actor.principal_id {
+                live.tenant_id = tid;
+            }
+        }
 
         report {"ok": True, "tenant_id": tid, "name": label, "role": "owner"};
     }

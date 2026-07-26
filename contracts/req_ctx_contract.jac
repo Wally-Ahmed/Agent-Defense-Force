@@ -84,12 +84,49 @@ obj ReqCtx {
 
     # --- context signature (appended; field order above is unchanged) ---
     # HMAC-SHA256 over the canonical JSON of every field above + sig_alg +
-    # issued_at_ms (i.e. every ReqCtx field except `sig`), keyed by the
+    # issued_at_ms + session_auth_at_ms (i.e. every ReqCtx field except `sig`,
+    # whatever that set grows to — the rule is the set, not this list), keyed by the
     # APP_CTX_SIGNING_KEY environment variable. "" means UNSIGNED ⇒ deny
     # CTX_UNVERIFIED. Verify with hmac.compare_digest, never `==`.
     has sig: str = "";
     has sig_alg: str = "HMAC-SHA256";     # algorithm agility
     has issued_at_ms: int = 0;            # replay bound — reject if older than 30s
+
+    # --- step-up authentication (appended; field order above is unchanged) ---
+    # Epoch milliseconds of the principal's most recent SUCCESSFUL
+    # AUTHENTICATION — a password login, or a completed re-authentication
+    # challenge. The gateway knows this because it performs the session lookup,
+    # so it stamps the value here from the session record.
+    #
+    # THIS IS NOT `issued_at_ms` AND NOT SESSION ACTIVITY. The three are
+    # distinct controls solving distinct problems, and conflating them
+    # re-opens the gap this field exists to close:
+    #
+    #   issued_at_ms         when THIS ctx was signed. Bounds replay (30s).
+    #                        Refreshed on literally every request.
+    #   last activity        when the session was last touched. Drives idle
+    #                        expiry. Refreshed on every request; NOT recorded
+    #                        here, because activity is not authentication.
+    #   session_auth_at_ms   when the human last PROVED WHO THEY ARE. Advances
+    #                        ONLY on password login or completed re-auth. A
+    #                        user who browses for an hour without re-entering a
+    #                        password has a session_auth_at_ms an hour old,
+    #                        which is exactly the point.
+    #
+    # Consumed by guard()'s step-up check: the operations marked † in
+    # contracts/app_api.openapi.yaml (member role change, member removal,
+    # export request, export download) require `auth_age_s <= 900`, i.e.
+    # `now_ms - session_auth_at_ms <= 900000`, else deny REAUTH_REQUIRED.
+    #
+    # FAIL-CLOSED: 0 means UNKNOWN — no session, an API token (which can never
+    # present a password), or a gateway that did not stamp it. 0 must be read
+    # as INFINITELY OLD and therefore never fresh. Because `now_ms - 0` is the
+    # current epoch millis, it exceeds any sane max age naturally; guard()
+    # nevertheless rejects it EXPLICITLY rather than relying on that arithmetic.
+    #
+    # Covered by the HMAC like every other field, so a client cannot forge
+    # freshness by claiming a recent authentication.
+    has session_auth_at_ms: int = 0;
 }
 
 # The authorization decision returned by guard().

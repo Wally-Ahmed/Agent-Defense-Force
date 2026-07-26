@@ -70,7 +70,7 @@ def:pub project_view(p: Project) -> dict {
 # POST /tenants/{tenant_id}/projects -- member ‡ -- project.create -- 201
 # --------------------------------------------------------------------------
 
-walker CreateProject {
+walker:priv CreateProject {
     has ctx: dict = {};
     has tenant_id: str = "";
     has key: str = "";
@@ -148,7 +148,7 @@ walker CreateProject {
 # GET /tenants/{tenant_id}/projects -- viewer -- project.list -- 200
 # --------------------------------------------------------------------------
 
-walker ListProjects {
+walker:priv ListProjects {
     has ctx: dict = {};
     has tenant_id: str = "";
     has limit: int = 0;
@@ -217,7 +217,7 @@ walker ListProjects {
 # GET /tenants/{tenant_id}/projects/{project_id} -- viewer -- project.read
 # --------------------------------------------------------------------------
 
-walker ReadProject {
+walker:priv ReadProject {
     has ctx: dict = {};
     has tenant_id: str = "";
     has project_id: str = "";
@@ -256,7 +256,7 @@ walker ReadProject {
 # PATCH /tenants/{tenant_id}/projects/{project_id} -- member ‡ -- project.update
 # --------------------------------------------------------------------------
 
-walker UpdateProject {
+walker:priv UpdateProject {
     has ctx: dict = {};
     has tenant_id: str = "";
     has project_id: str = "";
@@ -326,7 +326,7 @@ walker UpdateProject {
 # DELETE /tenants/{tenant_id}/projects/{project_id} -- admin -- project.delete
 # --------------------------------------------------------------------------
 
-walker DeleteProject {
+walker:priv DeleteProject {
     has ctx: dict = {};
     has tenant_id: str = "";
     has project_id: str = "";

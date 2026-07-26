@@ -42,7 +42,11 @@ glob:pub SIGNED_FIELDS: list = [
     "csrf_ok",
     "received_at_ms",
     "sig_alg",
-    "issued_at_ms"
+    "issued_at_ms",
+    # Step-up freshness. Signed like everything else: if this were left out of
+    # the set, a client could claim a recent authentication and satisfy the
+    # step-up check with an unsigned, attacker-chosen timestamp.
+    "session_auth_at_ms"
 ];
 
 # Replay bound. A captured-and-replayed ctx older than this is refused even if
@@ -60,7 +64,12 @@ def _default_for(name: str) -> object {
     if name == "csrf_ok" {
         return False;
     }
-    if name in ["received_at_ms", "issued_at_ms"] {
+    if name in ["received_at_ms", "issued_at_ms", "session_auth_at_ms"] {
+        # int, NOT "". A missing session_auth_at_ms must canonicalize to the
+        # same `0` the gateway would have signed; defaulting it to the empty
+        # string would serialize as `"session_auth_at_ms":""` and diverge from
+        # the signer by one byte -- the exact fail-open this module exists to
+        # prevent. 0 is also the fail-closed "unknown" sentinel guard() denies on.
         return 0;
     }
     if name == "sig_alg" {

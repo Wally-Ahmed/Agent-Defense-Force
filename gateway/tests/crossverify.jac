@@ -20,12 +20,14 @@ import from gateway.ctxsig {
     signed_ctx as gw_signed_ctx,
     sign_ctx as gw_sign,
     canonical_bytes as gw_canon,
-    verify_ctx as gw_verify
+    verify_ctx as gw_verify,
+    SIGNED_FIELDS as gw_signed
 }
 import from app.security.ctxsig {
     sign_ctx as app_sign,
     canonical_ctx_bytes as app_canon,
-    verify_ctx as app_verify
+    verify_ctx as app_verify,
+    SIGNED_FIELDS as app_signed
 }
 
 glob FAILURES: list = [];
@@ -61,7 +63,10 @@ with entry:__main__ {
         "csrf_ok": True,
         "received_at_ms": now,
         "sig_alg": "HMAC-SHA256",
-        "issued_at_ms": now
+        "issued_at_ms": now,
+        # Step-up freshness. A SIGNED field, so it is part of the canonical
+        # bytes both sides must agree on byte-for-byte.
+        "session_auth_at_ms": now - 60000
     };
 
     print("=== canonical form ===");
@@ -106,6 +111,23 @@ with entry:__main__ {
     bad_alg = gw_signed_ctx({**base, "sig_alg": "none"}, key);
     check("both reject sig_alg downgrade",
           (not app_verify(bad_alg, now)["ok"]) and (not gw_verify(bad_alg, key, now)["ok"]));
+
+    # The whole point of adding session_auth_at_ms to the SIGNED set: an
+    # attacker who could rewrite it in flight would manufacture step-up
+    # freshness and walk straight through the REAUTH_REQUIRED gate. Flipping it
+    # on an otherwise-valid, correctly-signed ctx must invalidate the HMAC on
+    # BOTH sides.
+    forged_freshness = dict(ctx);
+    forged_freshness["session_auth_at_ms"] = now;
+    check("both reject a forged session_auth_at_ms",
+          (not app_verify(forged_freshness, now)["ok"])
+          and (not gw_verify(forged_freshness, key, now)["ok"]));
+
+    # Field-set drift is the failure the contract calls out as fail-open. If one
+    # side ever stops signing a field the other signs, this catches it here.
+    check("both sides sign the same field SET",
+          sorted(gw_signed) == sorted(app_signed));
+    print(f"    signed fields ({len(gw_signed)}): {sorted(gw_signed)}");
 
     if FAILURES {
         print(f"\n{len(FAILURES)} FAILED: {FAILURES}");
