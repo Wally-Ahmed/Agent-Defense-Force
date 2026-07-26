@@ -1,29 +1,122 @@
 # JacHacksSF 2026
 
-## Memory & recall
+## Token Usage Rules
 
-Before answering anything about past decisions, prior work, or "what did we do
-about X", search the existing memory rather than guessing:
+Keep context small. Do not read the whole repo unless necessary. This whole pattern applies for all subagents too.
 
-- `mempalace search "<question>"` — semantic search over mined project files and
-  conversations.
-- The per-project auto-memory lives at
-  `~/.claude/projects/-Users-wally-Documents-GitHub-JacHacksSF-2026/memory/`;
-  `MEMORY.md` there is the index loaded into every session.
+Before broad file search or opening many files:
 
-Write a memory when a fact is durable and not derivable from the code or git
-history — project goals, constraints, decisions with a rationale, or user
-preferences about how work should be done. One fact per file, indexed in
-`MEMORY.md`. Do not record what the repo already says.
+1. Check Graphify outputs first.
+2. Use MemPalace only when prior project decisions or past context may matter.
+3. Open only the files needed for the current task.
+4. Prefer targeted reads over large scans.
+5. Summarize findings before continuing to more files.
 
-## Derived artifacts
+## Graphify Usage
 
-`graphify-out/`, `.mempalace/`, `mempalace.yaml`, and `entities.json` are
-gitignored and machine-local. They are rebuilt, never hand-edited:
+Use Graphify as the first-pass repo map. This whole pattern applies for all subagents too.
 
-- `graphify update .` rebuilds the graph (the `post-commit` hook does this
-  automatically in the background after each commit).
+Before architecture work, refactors, dependency tracing, or "where is this implemented?" tasks:
+
+- Check `graphify-out/GRAPH_REPORT.md` if it exists.
+- Use the graph report to identify relevant modules/files.
+- Use Graphify findings to reduce unnecessary file reads.
+- Only fall back to broad search when the graph report is missing, stale, or insufficient.
+
+Graphify is for codebase structure, relationships, and missed connections.
+
+## MemPalace Usage
+
+Use MemPalace for long-term project memory. This whole pattern applies for all subagents too.
+
+Use it when:
+
+- the user says we discussed something before
+- prior architecture decisions matter
+- the current task depends on earlier reasoning
+- you need to recall previous plans, conventions, or implementation choices
+
+Do not use MemPalace for every task. Do not treat recalled memory as automatically true. Verify against the current repo when needed.
+
+This project's palace: wing `jachackssf_2026`, stored at `.mempalace/palace`. Search it with
+`mempalace search "<question>"` (CLI) or the `mempalace_search` MCP tool.
+
+### Revive MemPalace after every compact
+
+The MemPalace MCP server (stdio) drops silently across long sessions and every `/compact` boundary —
+its `mcp__plugin_mempalace_mempalace__*` tools then show as disconnected (no error, no data loss; the
+palace and `mempalace.yaml` stay intact). **After every `/compact`, before relying on MemPalace,
+verify its tools are connected; if they are not, prompt the user to run `/plugin` (or `/mcp`) to revive
+it** (I cannot invoke those slash-commands myself). Expect this on each compaction. Until it is
+reconnected, fall back to the file memory + Graphify.
+
+## File Memory
+
+The third memory layer, independent of MemPalace and always loaded — the per-project memory directory:
+
+`~/.claude/projects/-Users-wally-Documents-GitHub-JacHacksSF-2026/memory/`
+
+`MEMORY.md` there is the index loaded into every session. Write a memory when a fact is durable and
+not derivable from the code or git history — project goals, constraints, decisions with a rationale,
+or user preferences about how work should be done. One fact per file, indexed in `MEMORY.md`. Do not
+record what the repo already says.
+
+## Working Style
+
+For implementation tasks (this whole pattern applies for all subagents too):
+
+1. Identify the smallest relevant file set.
+2. Explain the intended change briefly.
+3. Make focused edits.
+4. Run or suggest the narrowest useful test.
+5. Avoid unnecessary rewrites.
+
+For design tasks (this whole pattern applies for all subagents too):
+
+1. Use Graphify for repo structure.
+2. Use MemPalace for past decisions only if relevant.
+3. Keep the answer concise and action-oriented.
+
+## Orchestrator Mode
+
+For EVERY assignment: act as the orchestrator, not the implementer.
+
+1. Break the assignment down into individual parts.
+2. Hand each part off to subagents (background/parallel where possible; give each a
+   self-contained prompt with exact specs and a required report format).
+3. Keep only the glue: integrate the subagents' outputs, resolve conflicts between them,
+   and do the final wiring.
+4. Verify everything works end-to-end yourself before reporting done — run the checks,
+   curl the deploys, read the diffs; never relay a subagent's "done" unverified.
+
+Do a part yourself only when it is trivially small (a small or one-line edit, single
+command), when it IS the glue/verification, or when the user explicitly says to do it yourself.
+
+## Conductor Rule
+
+The main loop is the CONDUCTOR. It is imperative that its context window stays SMALL.
+
+1. Edit files yourself ONLY for small / one-line changes.
+2. Anything that requires complex reasoning — design work, multi-file edits, debugging,
+   asset builds, deep analysis — is handed off to a subagent with a self-contained spec.
+3. The conductor keeps only: spec-writing, dispatch, integration/glue, conflict
+   resolution, and end-to-end verification of subagent output.
+4. Protect the context window: consume subagent REPORTS instead of raw files; never pull
+   large files, transcripts, or logs into the conductor's context when a subagent can
+   read them and return a summary.
+
+## Derived Artifacts
+
+`graphify-out/`, `.mempalace/`, `mempalace.yaml`, and `entities.json` are gitignored and
+machine-local. They are rebuilt, never hand-edited:
+
+- `graphify update .` rebuilds the graph (the `post-commit` hook does this automatically in the
+  background after each commit).
 - `mempalace mine .` refiles project files into the palace.
+
+## Project Rule
+
+Optimize for low-token, high-signal work. Prefer precise context retrieval over loading large files or repeating architecture summaries.
 
 ## graphify
 
