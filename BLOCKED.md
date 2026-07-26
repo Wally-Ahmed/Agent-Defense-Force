@@ -18,16 +18,25 @@ All required headless flags confirmed present: `-p/--print`, `--model`, `--conve
 
 **Still blocks:** the Gemini 3.1 Pro responder, and therefore the live *six*-model run.
 
-**What I need from you — one step, ~2 minutes:**
+**What I need from you — one step, ~1 minute.** Run it in the Claude Code session with the
+`!` prefix so it gets a live terminal:
 ```
-agy                      # run it once; complete Google sign-in in the browser
-agy --list-models        # then confirm "Gemini 3.1 Pro (High)" appears
+! agy
 ```
-`~/.gemini` does not exist yet, which is how I know sign-in hasn't happened. The reasoning
-level is baked into the model name — there is no separate effort flag for this runtime.
+It prints a Google URL, you sign in, then paste the authorization code back into that same
+prompt.
 
-**Why I can't:** interactive Google OAuth. No headless path, and the spec forbids
-substituting a different model.
+**Why I can't do it for you — and why a pasted code doesn't help.** I *can* trigger the flow
+and capture the URL; I did. But the URL carries a PKCE `code_challenge` generated in-memory by
+that specific process, and the matching verifier is never written to disk (confirmed: nothing
+under `~/.gemini` holds pending-auth state). Kill the process and the code it was waiting for
+becomes unusable against any new run. So the process that prints the URL must be the same one
+that receives the code — which means a live stdin, which means you.
+
+Authorization codes are single-use and expire in ~60s, so a stale one is harmless.
+
+**Effort note for the receipt:** `agy --effort` accepts only `low|medium|high`. `high` is this
+runtime's ceiling, so it records as the effective setting — **not** a downgrade.
 
 **Workaround in place:** connector + adapter built in full against a recorded-transcript mock
 speaking the real `assessment.v1` schema. Swapping in the live model is a config change, not a
