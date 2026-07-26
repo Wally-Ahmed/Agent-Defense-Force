@@ -7,20 +7,27 @@ me and I sweep this file: swap the real thing in, re-run that seam's tests, mark
 
 ---
 
-## B1 — `agy` (Google Antigravity) not installed · OPEN
+## B1 — `agy` Google OAuth · PARTIALLY CLEARED 14:03 PDT
 
-**Blocks:** the Gemini 3.1 Pro responder, and therefore the live *six*-model run. Five-model
-runs are unaffected.
+**Binary is installed** — `agy 1.1.7` at `/Users/wally/.local/bin/agy`, via the documented
+non-interactive script (`curl -fsSL https://antigravity.google/cli/install.sh | bash`). My
+earlier note that this needed the IDE was wrong; a standalone installer exists.
 
-**What I need from you:**
-1. Install the Antigravity IDE, then complete Google OAuth sign-in.
-2. Verify: `which agy && agy --version && agy --list-models`
-3. Confirm the model list shows **`Gemini 3.1 Pro (High)`** — the reasoning level is baked
-   into the model name; there is no separate effort flag.
+All required headless flags confirmed present: `-p/--print`, `--model`, `--conversation`,
+`--add-dir`, `--dangerously-skip-permissions`, `--print-timeout`.
 
-**Why I can't:** no npm/brew package exists. It ships inside the IDE and requires interactive
-Google OAuth. There is no non-interactive path and the spec forbids substituting a different
-model.
+**Still blocks:** the Gemini 3.1 Pro responder, and therefore the live *six*-model run.
+
+**What I need from you — one step, ~2 minutes:**
+```
+agy                      # run it once; complete Google sign-in in the browser
+agy --list-models        # then confirm "Gemini 3.1 Pro (High)" appears
+```
+`~/.gemini` does not exist yet, which is how I know sign-in hasn't happened. The reasoning
+level is baked into the model name — there is no separate effort flag for this runtime.
+
+**Why I can't:** interactive Google OAuth. No headless path, and the spec forbids
+substituting a different model.
 
 **Workaround in place:** connector + adapter built in full against a recorded-transcript mock
 speaking the real `assessment.v1` schema. Swapping in the live model is a config change, not a
@@ -102,6 +109,31 @@ B2 is cleared — no action needed from you beyond the key.
 
 ---
 
+---
+
+## Architecture correction — auth strategy, 14:05 PDT
+
+The `hermes-handoff-overview` walkthrough establishes the pattern this project's prior art
+actually uses: **each harness runs stock and authenticates natively with the operator's own
+subscription** — no token scraping, no API credits. "Pick the ONE you already pay for."
+
+That changes my plan, which had routed all five harnesses through OpenRouter. Corrected:
+
+| Harness | Auth | State |
+|---|---|---|
+| Claude Code | **native** — Claude Max subscription | ✅ already authenticated, no key needed |
+| Codex | ChatGPT subscription **or** OpenRouter | B5 |
+| `agy` | native — Google account | B1 |
+| OpenCode ×2 | OpenRouter (no native provider for Kimi K3 / GLM-5.2) | B2 + B4 |
+| Hermes | OpenRouter (`z-ai/glm-5.2`) | B2 |
+
+This is not a walk-back of the OpenRouter decision — it narrows it to where it is actually
+needed. Claude Code is already working on your Max subscription, so routing it through
+OpenRouter would add a dependency and a cost for nothing. Model IDs stay pinned exactly
+either way; nothing is substituted.
+
+---
+
 ## Resolved
 
-_none yet_
+- **B1 (install half)** — `agy 1.1.7` installed non-interactively at 14:03 PDT. OAuth still open.
