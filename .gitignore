@@ -13,6 +13,9 @@ graphify-out/
 .claude/CLAUDE.local.md
 CLAUDE.local.md
 
+# claude-mem context dump (regenerated each session with a fresh timestamp)
+AGENTS.md
+
 # Env & secrets
 .env
 .env.*
