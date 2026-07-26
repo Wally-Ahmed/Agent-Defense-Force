@@ -7,7 +7,29 @@ me and I sweep this file: swap the real thing in, re-run that seam's tests, mark
 
 ---
 
-## B1 — `agy` Google OAuth · PARTIALLY CLEARED 14:03 PDT
+## B1 — `agy` Google OAuth · ✅ RESOLVED 14:35 PDT
+
+**Cleared.** User completed sign-in. Verified directly: `agy models` lists the catalog (it
+refused before auth), and a real headless call — `agy -p "…" --model gemini-3.1-pro-high` —
+returned live Gemini 3.1 Pro output.
+
+**Three facts locked in from the live check:**
+- Model id is **`gemini-3.1-pro-high`** (not the "(High)" display string from the old prior
+  art). Only `-high` and `-low` exist for the pro tier, so **high is the ceiling** → recorded
+  as effective effort, not a downgrade. Effort receipt written to `runs/live/effort.jsonl`
+  with `downgraded:false`.
+- **Plain `-p` works headless on 1.1.7** — the TTY-drop bug that forced the `script -qec`
+  wrapper in the agi-summit-hack connector does NOT reproduce here. The Antigravity connector
+  can drop the pty wrapper, which removes the process-group-kill complexity too.
+- Auth state lives outside the file patterns I scanned for (`~/.gemini` shows no obvious
+  cred/token file), so "no credential file" is NOT a reliable un-auth signal for this runtime.
+  Use `agy models` succeeding as the auth probe instead.
+
+Original entry retained below for the record.
+
+---
+
+## B1 (original) — `agy` install + OAuth
 
 **Binary is installed** — `agy 1.1.7` at `/Users/wally/.local/bin/agy`, via the documented
 non-interactive script (`curl -fsSL https://antigravity.google/cli/install.sh | bash`). My
