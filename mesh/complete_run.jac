@@ -239,7 +239,7 @@ with entry:__main__ {
         try {
             payload = load_monitor_incident(incident_id);
             source = "runs/" + RUN_ID + "/incidents.jsonl (monitor-derived)";
-        } except (ValueError, OSError) as e {
+        } except (ValueError, OSError) {
             # Not in the monitor stream. Fall back to the fixture ONLY when the
             # request names the fixture's own incident; otherwise the original
             # "no such incident" is the honest answer and it propagates.
