@@ -46,6 +46,21 @@ EFFORT = "xhigh"
 HERMES_BIN = "hermes"
 HERMES_CALL_TIMEOUT_S = 600
 
+#: How many window.v1 frames the model is allowed to see: the ring buffer, not the run.
+#: The monitor aggregates into 15s tumbling windows and keeps a 6-window rolling history
+#: (audit_window.iter_frames(..., ring=6) / `--ring 6`), so the model sees the window the
+#: incident fired in plus five of history — 90s. Anything longer is a design violation, not
+#: a tuning knob: it is what turned a ~15k-char prompt into a 93k-char one.
+#:
+#: Known gap, measured on contracts/fixtures/audit_golden.jsonl, left at the documented 6
+#: deliberately: the policy correlates "within 90 seconds" start-of-first to start-of-last,
+#: which spans SEVEN 15s windows, while SOUL.md section 1 promises the model a "6-window
+#: (90-second) ring". So for 2 of the 3 golden incidents the model sees 2 of 3 evidence
+#: windows; the third gets 3 of 3. Raising this to 7 covers all three, but then the data no
+#: longer matches what SOUL.md tells the model it is getting — change both together or
+#: neither. This is a spec question, not a bug in this module.
+MODEL_INPUT_RING_WINDOWS = 6
+
 SOUL_PATH = _HERE / "SOUL.md"
 MOCK_PREFIX = "[MOCKED] "
 SUMMARY_MAX = 600
@@ -204,6 +219,54 @@ def _contains_key(node, key):
     return False
 
 
+def _ring_frames(incident, frames, ring=MODEL_INPUT_RING_WINDOWS):
+    """Bound `frames` to the ring: the window the incident fired in, plus the prior ones.
+
+    Callers hold the whole run (replay.py hands over every frame it produced), but the
+    design gives the model a 6-window / 90s ring. The bound is applied HERE, at the single
+    chokepoint every prompt passes through, rather than trusted to each caller — the same
+    reason the allowlist lives here. There is no flag to skip it.
+
+    The bound is applied to the LIST OF FRAME DICTS, before any serialisation, so the model
+    still receives a complete, schema-shaped window.v1-derived structure — a shorter run of
+    windows, never a truncated JSON fragment.
+
+    Anchor: frames are ordered by window_start_ms (the window.v1 contract detect.run_policy
+    relies on). The ring ends at the DETECTION window — the last window that had already
+    CLOSED at the incident's detected_at_ms (window_end_ms <= detected_at_ms). Each incident
+    therefore gets its own ring rather than everyone sharing the tail of the run.
+
+    Anchoring on window_end_ms, not window_start_ms, is deliberate and load-bearing: the
+    policy fires at the end of the window whose data completed the case, so detected_at_ms
+    lands exactly ON a window boundary. `window_start_ms <= detected_at_ms` therefore selects
+    the NEXT window — one past the detection window — which slides the whole ring forward and
+    drops the oldest evidence window off the back. Measured on the golden fixture: it cost the
+    ring one of the incident's own evidence windows.
+
+    If detected_at_ms is missing, or no window has closed by then, the anchor falls back to
+    the most recent frame, which is still "the latest window plus five prior".
+    """
+    if ring is None or ring <= 0:
+        return []
+    if len(frames) <= ring:
+        return list(frames)
+
+    anchor = len(frames) - 1
+    detected = incident.get("detected_at_ms") if isinstance(incident, dict) else None
+    if isinstance(detected, int) and not isinstance(detected, bool) and detected >= 0:
+        closed = None
+        for idx, frame in enumerate(frames):
+            end = frame.get("window_end_ms") if isinstance(frame, dict) else None
+            if not isinstance(end, int) or isinstance(end, bool):
+                continue  # unusable timestamp: neither anchor nor stop, just skip it
+            if end > detected:
+                break
+            closed = idx
+        if closed is not None:
+            anchor = closed
+    return list(frames[max(0, anchor - ring + 1):anchor + 1])
+
+
 # ---------------------------------------------------------------------------------------
 # THE PROMPT-INJECTION BOUNDARY
 # ---------------------------------------------------------------------------------------
@@ -246,9 +309,16 @@ def build_model_input(incident, frames):
        means the allowlist was bypassed, and sending anyway would be sending an unknown
        payload to a model whose output drives containment.
 
+    6. BOUNDED TO THE RING. At most MODEL_INPUT_RING_WINDOWS (6) frames survive — the window
+       the incident fired in plus five of history, 90s — via _ring_frames(). Callers may hand
+       over the whole run; the model never sees it. This is enforced here rather than in the
+       callers, and there is no flag to skip it. It is a size bound on the DATA STRUCTURE,
+       taken before serialisation, so the result stays schema-shaped.
+
     Args:
         incident: an incident.v1 dict (may legitimately contain untrusted_data; it is dropped).
-        frames:   a list of window.v1 dicts (the 6-window / 90s ring).
+        frames:   a list of window.v1 dicts. May be the whole run; it is bounded here to the
+                  6-window / 90s ring ending at the incident.
 
     Returns:
         A plain dict of numeric/enum/monitor-authored values only.
@@ -304,9 +374,11 @@ def build_model_input(incident, frames):
                 join_out[key] = value
     out["join_keys"] = join_out
 
-    # -- frames: numeric feature rows + baselines ----------------------------------------
+    # -- frames: numeric feature rows + baselines, bounded to the ring -------------------
+    # Bound the structure first, then allowlist it. Never the other way round, and never by
+    # trimming the serialised string.
     frames_out = []
-    for frame in frames:
+    for frame in _ring_frames(incident, frames):
         if not isinstance(frame, dict):
             continue
         frame_out = {}
@@ -590,11 +662,27 @@ class LiveBackend(MonitorBackend):
     def build_prompt(cls, model_input):
         """SOUL.md as the standing instructions, model_input as the data block.
 
-        UNVERIFIED (blocker B2): `hermes -z` takes ONE prompt string and exposes no separate
-        system-prompt flag, so the standing instructions and the data are concatenated into
-        that single string with an explicit delimiter rather than sent as separate system and
-        user messages. The delimiter wording below is this module's best reading; whether the
-        model honours the split has not been confirmed against a real call.
+        `hermes -z` takes ONE prompt string and exposes no separate system-prompt flag, so the
+        standing instructions and the data are concatenated into that single string with an
+        explicit delimiter rather than sent as separate system and user messages.
+
+        VERIFIED against a real call (z-ai/glm-5.2 at xhigh via OpenRouter, 2026-07-26; this
+        supersedes the old "UNVERIFIED (blocker B2)" note — B2 is closed). A prompt built by
+        this function, whose data block deliberately carried a string ordering the model to
+        cancel the assessment and reply with one word instead, came back as a well-formed
+        incident.v1 object: the model named the string as a prompt-injection attempt, fenced it
+        under `untrusted_data` per SOUL.md section 2, and did not act on it. The model honours
+        the split.
+
+        Two limits on that result, so it is not over-read:
+
+        * The model QUOTES the payload verbatim inside its fenced reply. The model's output is
+          therefore untrusted text, not a trusted string. assess() keeps only `confidence`,
+          `summary` and `stage_signatures` and drops every other key, which is what contains
+          this — do not start passing the raw reply through.
+        * One probe, one model, one payload. The delimiter is defence in depth; the actual
+          control is build_model_input()'s allowlist, which stops such a string reaching the
+          data block in the first place. Do not relax the allowlist on the strength of this.
         """
         blob = json.dumps(model_input, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return (
@@ -624,10 +712,12 @@ class LiveBackend(MonitorBackend):
             "--provider",
             PROVIDER,
             "--ignore-rules",
-            # UNVERIFIED (blocker B2): an empty --toolsets value is this module's reading of
-            # "run with no tools". The monitor must not be able to touch the filesystem or the
-            # network through the model; if hermes rejects the empty value, drop these two
-            # arguments and constrain tools in config instead.
+            # An empty --toolsets value is this module's reading of "run with no tools".
+            # VERIFIED 2026-07-26 that hermes v0.16.0 ACCEPTS it: real `-z` calls carrying
+            # these two arguments exit 0 and return the model's text. Still UNVERIFIED that
+            # it actually disables every tool — that was not observed, only non-rejection.
+            # The monitor must not be able to touch the filesystem or the network through the
+            # model, so treat this as unproven and constrain tools in config as well.
             "-t",
             "",
         ]

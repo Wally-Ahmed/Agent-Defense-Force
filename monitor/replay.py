@@ -104,6 +104,9 @@ def replay(input_path, run_id, assess=False, backend=None):
         be = hermes_client.get_backend(backend_name)
         assessments = []
         for inc in incidents:
+            # The whole run goes in; build_model_input bounds it to the 6-window ring
+            # (MODEL_INPUT_RING_WINDOWS) before the allowlist runs. Detection above already
+            # ran over every frame — this bounds only what the model is shown.
             model_input = hermes_client.build_model_input(inc, frames)
             assessments.append({
                 "incident_id": inc["incident_id"],
