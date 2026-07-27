@@ -1,0 +1,90 @@
+<meta charset="utf-8">
+<title>scene17 — the ledger, ending on the rollback</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .trace{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:13.5px;font-weight:700}
+  .trace span{color:var(--dim2)}
+  .trace i{font-style:normal;color:var(--line2);font-size:12px}
+  .trace span.last{color:var(--win);font-weight:850}
+
+  .ledger{display:flex;flex-direction:column;gap:9px;flex:1;min-height:0;justify-content:space-between}
+  .lg{display:grid;grid-template-columns:126px minmax(0,1fr) minmax(0,1.16fr) 124px;gap:18px;align-items:center;
+      padding:9px 15px;border-radius:10px;
+      background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.06)}
+  .lg .kind{font-size:17px;font-weight:850;letter-spacing:-.005em;color:var(--accent2)}
+  .lg .id{font-family:var(--mono);font-size:15.5px;color:var(--text);
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lg .det{font-family:var(--mono);font-size:15px;color:var(--dim2);
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lg .rep{display:flex;align-items:center;justify-content:flex-end;gap:6px;
+           font-size:15px;font-weight:750;color:var(--win)}
+
+  .lg.final{background:linear-gradient(96deg,rgba(38,231,155,.20) 0%,rgba(38,231,155,.09) 100%);
+            border:1.5px solid rgba(38,231,155,.85);
+            box-shadow:0 0 0 1px rgba(38,231,155,.22), 0 0 34px -8px rgba(38,231,155,.55);
+            padding:11px 15px}
+  .lg.final .kind{color:#7bffcb;font-size:18px}
+  .lg.final .id{color:#fff;font-weight:700;font-size:16.5px}
+  .lg.final .det{color:#c7ffe8;font-size:15.5px}
+  .lg.final .rep{color:#7bffcb;font-weight:850}
+</style>
+
+<div class="stage">
+
+  <div class="row c" style="gap:14px">
+    <div class="kick">Beat 8 · the record, and the undo</div>
+    <div class="chip mono on">inc-2026-07-26-live01</div>
+    <div class="spacer"></div>
+    <div class="trace">
+      <span>ESCALATED</span><i>→</i><span>ASSESSING</span><i>→</i><span>DECIDING</span><i>→</i><span>CONTAINING</span><i>→</i><span>VERIFYING</span><i>→</i><span>CONTAINED</span><i>→</i><span class="last">ROLLED_BACK</span>
+    </div>
+  </div>
+
+  <div class="ledger">
+    <div class="lg">
+      <span class="kind">window</span>
+      <span class="id">window:1773756300383:c_32bfd983ffdd2f41</span>
+      <span class="det">window.v1 · every feature scored against the actor's own p95</span>
+      <span class="rep">replayable ✓</span>
+    </div>
+    <div class="lg">
+      <span class="kind">incident</span>
+      <span class="id">inc-2026-07-26-live01</span>
+      <span class="det">evidence[] attached · families + stage signatures · untrusted fenced</span>
+      <span class="rep">replayable ✓</span>
+    </div>
+    <div class="lg">
+      <span class="kind">assessments</span>
+      <span class="id">5 / 5 responders · verbatim, unedited</span>
+      <span class="det">claude .93 · codex .99 · antigravity .95 · kimi .95 · glm .93</span>
+      <span class="rep">replayable ✓</span>
+    </div>
+    <div class="lg">
+      <span class="kind">decision</span>
+      <span class="id">score 4.75 · quorum 5/5 · degraded false</span>
+      <span class="det">contain iff &gt;=3/5 malicious AND score &gt;= 1.5 — a rule, not a model</span>
+      <span class="rep">replayable ✓</span>
+    </div>
+    <div class="lg">
+      <span class="kind">action</span>
+      <span class="id">inc-2026-07-26-live01:block_source:3c4ddbb1e2861fcb</span>
+      <span class="det">8 applied · 0 aborted · min ttl 900 s · prior_state captured</span>
+      <span class="rep">replayable ✓</span>
+    </div>
+    <div class="lg final">
+      <span class="kind">rollback</span>
+      <span class="id">applied → rolled_back</span>
+      <span class="det">LIFO · control surface [] · sess_7c19aa4e serving again</span>
+      <span class="rep">replayable ✓</span>
+    </div>
+  </div>
+
+  <div class="row c">
+    <div class="banner good" style="flex:none">reversal is a <em style="font-style:normal;color:#fff">recorded operation</em>, not an emergency</div>
+    <div class="chip good">rollback_complete true</div>
+    <div class="chip good">0 controls remain</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="prov">REAL · audit_golden.jsonl · runs/six-live/containment.json</div>
+</div>

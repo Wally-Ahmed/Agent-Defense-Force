@@ -1,0 +1,153 @@
+<meta charset="utf-8">
+<title>scene1 — the two-phase chain</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* kit's `.stage > *{position:relative}` out-specifies `.bleed`; restore it */
+  .stage > .bleed{position:absolute;inset:0}
+
+  .halves{display:grid;grid-template-columns:606px 48px 1fr;flex:1;min-height:0;align-items:stretch}
+
+  .half{display:flex;flex-direction:column;gap:10px;min-width:0;padding:13px 17px;
+        border:1px solid var(--line);box-shadow:0 16px 34px -22px rgba(0,0,0,.85)}
+  .half.a{border-radius:16px 0 0 16px;border-color:rgba(255,81,74,.5);
+          background:linear-gradient(170deg,#1f1310 0%,#271512 100%);opacity:.84}
+  .half.b{border-radius:0 16px 16px 0;border-color:rgba(255,215,53,.55);
+          background:linear-gradient(170deg,#1e1708 0%,#2b210c 100%);
+          box-shadow:0 0 0 1px rgba(255,215,53,.12),0 16px 34px -22px #000}
+
+  .phh{display:flex;align-items:center;gap:9px;white-space:nowrap;
+       font-size:15.5px;font-weight:850;letter-spacing:.115em;text-transform:uppercase}
+
+  .chain{display:flex;align-items:stretch;flex:1;min-height:0}
+  .nd{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:8px;
+      padding:11px 12px;border-radius:11px}
+  .nd .ix{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:.09em}
+  .nd .tt{font-size:17px;font-weight:780;line-height:1.2;letter-spacing:-.005em;color:var(--text)}
+  .nd .su{font-size:16px;line-height:1.26;color:var(--dim2);
+          padding-top:9px;border-top:1px solid rgba(255,255,255,.10)}
+
+  .a .nd{background:rgba(255,81,74,.08);border:1px solid rgba(255,81,74,.30)}
+  .a .nd .ix{color:#ff8f89}
+  .b .nd{background:rgba(255,215,53,.085);border:1px solid rgba(255,215,53,.34)}
+  .b .nd .ix{color:var(--warn)}
+  .b .nd .tt{font-size:19.5px;line-height:1.19}
+  .b .nd.key{background:rgba(255,215,53,.17);border-color:rgba(255,215,53,.85);
+             box-shadow:0 0 0 1px rgba(255,215,53,.22)}
+
+  .arw{flex:none;width:26px;display:flex;align-items:center;justify-content:center}
+  .brk{display:flex;align-items:center;gap:12px;font-size:15.5px;font-weight:850;
+       letter-spacing:.15em;text-transform:uppercase}
+  .brk i{flex:1;height:1px;background:currentColor;opacity:.42}
+
+  .pivot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .pivot .vs{writing-mode:vertical-rl;font-size:15px;font-weight:850;letter-spacing:.26em;color:var(--line2)}
+
+  .srcrow{display:flex;align-items:center;gap:14px;margin-bottom:24px}
+  .src{width:1100px;flex:none;display:flex;align-items:center;gap:14px;padding:11px 16px;border-radius:11px;
+       background:rgba(28,22,17,.78);border:1px solid var(--line);border-left:3px solid var(--accent)}
+  .src .lb{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:.11em;color:var(--accent);flex:none}
+  .src .tx{font-size:15.5px;line-height:1.3;color:var(--dim)}
+</style>
+
+<div class="stage">
+  <div class="bleed" style="background:radial-gradient(760px 340px at 74% 46%,rgba(255,215,53,.10),transparent 66%)"></div>
+
+  <div class="row c" style="gap:14px">
+    <div class="kick">Public incident · read the sequence</div>
+    <div class="chip mono badc">disclosed 16 Jul 2026</div>
+    <div class="spacer"></div>
+    <div class="h3" style="color:var(--dim)">attributed to an autonomous agent framework</div>
+  </div>
+
+  <div class="halves">
+
+    <div class="half a">
+      <div class="phh fail"><span class="dot"></span>Phase one · July 2026 · the way in</div>
+      <div class="chain">
+        <div class="nd">
+          <span class="ix">01</span>
+          <div class="tt">malicious dataset</div>
+          <div class="su">submitted for processing</div>
+        </div>
+        <div class="arw" style="color:rgba(255,81,74,.75)">
+          <svg width="26" height="24" viewBox="0 0 26 24" fill="none">
+            <path d="M2 12 H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M14.5 6.5 L21 12 L14.5 17.5" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="nd">
+          <span class="ix">02</span>
+          <div class="tt">remote-code dataset loader + template injection</div>
+          <div class="su">two code-execution paths</div>
+        </div>
+        <div class="arw" style="color:rgba(255,81,74,.75)">
+          <svg width="26" height="24" viewBox="0 0 26 24" fill="none">
+            <path d="M2 12 H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M14.5 6.5 L21 12 L14.5 17.5" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="nd">
+          <span class="ix">03</span>
+          <div class="tt">code runs on a processing worker</div>
+          <div class="su">execution on their own infrastructure</div>
+        </div>
+      </div>
+      <div class="brk" style="color:#ff8f89;opacity:.9"><i></i><span>an old kind of problem</span><i></i></div>
+    </div>
+
+    <div class="pivot">
+      <div class="vrule" style="opacity:.45"></div>
+      <div class="vs">PIVOT</div>
+      <div class="vrule" style="opacity:.45"></div>
+    </div>
+
+    <div class="half b">
+      <div class="phh warn"><span class="dot"></span>Phase two · the part we built for</div>
+      <div class="chain">
+        <div class="nd">
+          <span class="ix">04</span>
+          <div class="tt">node-level access</div>
+          <div class="su">escalated off the worker</div>
+        </div>
+        <div class="arw" style="color:rgba(255,215,53,.85)">
+          <svg width="26" height="24" viewBox="0 0 26 24" fill="none">
+            <path d="M2 12 H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M14.5 6.5 L21 12 L14.5 17.5" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="nd key">
+          <span class="ix">05</span>
+          <div class="tt">valid cloud and cluster credentials harvested</div>
+          <div class="su">nothing left to break</div>
+        </div>
+        <div class="arw" style="color:rgba(255,215,53,.85)">
+          <svg width="26" height="24" viewBox="0 0 26 24" fill="none">
+            <path d="M2 12 H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M14.5 6.5 L21 12 L14.5 17.5" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="nd">
+          <span class="ix">06</span>
+          <div class="tt">lateral movement across internal clusters</div>
+          <div class="su">authenticated the whole way</div>
+        </div>
+      </div>
+      <div class="brk warn"><i></i><span>over a weekend</span><i></i></div>
+    </div>
+
+  </div>
+
+  <div class="srcrow">
+    <div class="src">
+      <span class="lb">SOURCE</span>
+      <span class="tx">Hugging Face disclosure, 16 Jul 2026 · OpenAI: its own models, internal cyber benchmark, escaped test scope (TechCrunch, 21 Jul 2026)</span>
+    </div>
+    <div class="chip warnc" style="margin-left:auto">not a criminal third party</div>
+  </div>
+
+  <div class="prov illus">PUBLIC DISCLOSURE · NOT THIS SYSTEM</div>
+</div>

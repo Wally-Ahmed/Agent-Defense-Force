@@ -1,0 +1,146 @@
+<meta charset="utf-8">
+<title>scene4 — Cotal transport</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .hdr{display:flex;align-items:center;gap:14px;height:30px;flex:none}
+  .diag{position:relative;width:1440px;height:300px;flex:none}
+  .diag > svg{position:absolute;left:0;top:0}
+
+  .side{position:absolute;top:98px;height:104px;display:flex;flex-direction:column;
+        justify-content:center;gap:4px;padding:0 16px;border-radius:14px}
+  .side .t{font-family:var(--mono);font-size:17px;font-weight:850;letter-spacing:-.01em}
+  .side .s{font-family:var(--mono);font-size:15px;color:var(--dim2)}
+  .side .s b{color:var(--text);font-weight:650}
+
+  .hz{left:0;width:200px;background:linear-gradient(168deg,rgba(248,153,255,.12),var(--panel2));
+      border:1px solid rgba(248,153,255,.5);box-shadow:0 0 0 1px rgba(248,153,255,.10),0 14px 30px -22px #000}
+  .hz .t{color:var(--hermes)}
+  .co{left:1204px;width:236px;background:linear-gradient(168deg,rgba(255,255,255,.05),var(--panel2));
+      border:1px solid var(--line2);box-shadow:0 14px 30px -22px #000}
+  .co .t{color:var(--text)}
+  .co .badge{font-family:var(--sans);font-size:14.5px;font-weight:850;letter-spacing:.09em;
+      color:var(--warn);margin-top:2px}
+
+  .rbox{position:absolute;left:434px;width:644px;height:40px;padding:0 15px;
+        display:grid;grid-template-columns:208px 100px 1fr;gap:10px;align-items:center}
+  .rbox .rid{font-family:var(--mono);font-size:16px;font-weight:850;color:var(--mc);letter-spacing:-.01em}
+  .rbox .rrt{font-family:var(--mono);font-size:15px;color:var(--dim2)}
+  .rbox .rmd{font-family:var(--mono);font-size:15px;color:var(--text);text-align:right}
+
+  .ftr{display:flex;align-items:center;gap:24px;height:34px;flex:none}
+  .big{font-size:26px;font-weight:850;letter-spacing:-.018em;color:var(--text);white-space:nowrap}
+  .big em{font-style:normal;color:var(--accent2)}
+</style>
+
+<div class="stage">
+
+  <div class="hdr">
+    <div class="kick cool">04 · The transport</div>
+    <div class="chip mono cool">Cotal — open-source agent mesh on NATS · third-party, credited</div>
+    <div class="spacer"></div>
+    <div class="chip"><span class="dot" style="color:var(--accent2)"></span>channel — multicast</div>
+    <div class="chip">toService — anycast</div>
+    <div class="chip">to — unicast DM</div>
+  </div>
+
+  <div class="diag">
+    <svg width="1440" height="300" viewBox="0 0 1440 300" aria-hidden="true">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#1ecaff"/>
+        </marker>
+        <marker id="aw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#d6c7b7"/>
+        </marker>
+      </defs>
+
+      <!-- feed: hermes -> channel rail -->
+      <line x1="200" y1="150" x2="368" y2="150" stroke="#1ecaff" stroke-width="3"/>
+      <text x="284" y="139" text-anchor="middle" font-family="ui-monospace,Menlo,monospace"
+            font-size="16" font-weight="700" fill="#1ecaff">sec.incident</text>
+      <text x="284" y="172" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif"
+            font-size="15" fill="#ae9f90">channel · multicast · durable</text>
+
+      <!-- the rail -->
+      <line x1="372" y1="20" x2="372" y2="280" stroke="#1ecaff" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="372" cy="150" r="7" fill="#1ecaff"/>
+
+      <!-- five branches off the rail, one per responder -->
+      <g stroke="#1ecaff" stroke-width="3" marker-end="url(#a2)">
+        <line x1="372" y1="20"  x2="426" y2="20"/>
+        <line x1="372" y1="85"  x2="426" y2="85"/>
+        <line x1="372" y1="150" x2="426" y2="150"/>
+        <line x1="372" y1="215" x2="426" y2="215"/>
+        <line x1="372" y1="280" x2="426" y2="280"/>
+      </g>
+      <g fill="#1ecaff">
+        <circle cx="372" cy="20" r="4.5"/><circle cx="372" cy="85" r="4.5"/>
+        <circle cx="372" cy="215" r="4.5"/><circle cx="372" cy="280" r="4.5"/>
+      </g>
+
+      <!-- NO link between responders: the gaps are cut -->
+      <g stroke="rgba(255,81,74,.45)" stroke-width="2" stroke-dasharray="3 4">
+        <line x1="756" y1="42" x2="756" y2="63"/>
+        <line x1="756" y1="107" x2="756" y2="128"/>
+        <line x1="756" y1="172" x2="756" y2="193"/>
+        <line x1="756" y1="237" x2="756" y2="258"/>
+      </g>
+      <g fill="#1c1611" stroke="rgba(255,81,74,.7)" stroke-width="1.5">
+        <circle cx="756" cy="52.5" r="8.5"/><circle cx="756" cy="117.5" r="8.5"/>
+        <circle cx="756" cy="182.5" r="8.5"/><circle cx="756" cy="247.5" r="8.5"/>
+      </g>
+      <g stroke="#ff514a" stroke-width="2" stroke-linecap="round">
+        <line x1="752" y1="48.5" x2="760" y2="56.5"/><line x1="760" y1="48.5" x2="752" y2="56.5"/>
+        <line x1="752" y1="113.5" x2="760" y2="121.5"/><line x1="760" y1="113.5" x2="752" y2="121.5"/>
+        <line x1="752" y1="178.5" x2="760" y2="186.5"/><line x1="760" y1="178.5" x2="752" y2="186.5"/>
+        <line x1="752" y1="243.5" x2="760" y2="251.5"/><line x1="760" y1="243.5" x2="752" y2="251.5"/>
+      </g>
+      <text x="774" y="122" font-family="-apple-system,system-ui,sans-serif" font-size="15"
+            font-weight="700" fill="#ffc6c2">no peer link</text>
+
+      <!-- five separate DM returns -->
+      <g stroke="#d6c7b7" stroke-width="2.5" fill="none" marker-end="url(#aw)">
+        <path d="M1078,20  H1112 C1152,20  1160,150 1196,150"/>
+        <path d="M1078,85  H1112 C1152,85  1160,150 1196,150"/>
+        <path d="M1078,150 H1196"/>
+        <path d="M1078,215 H1112 C1152,215 1160,150 1196,150"/>
+        <path d="M1078,280 H1112 C1152,280 1160,150 1196,150"/>
+      </g>
+      <g font-family="ui-monospace,Menlo,monospace" font-size="15" font-weight="800" fill="#fdf5ec">
+        <text x="1082" y="12">DM</text><text x="1082" y="77">DM</text>
+        <text x="1082" y="142">DM</text><text x="1082" y="207">DM</text><text x="1082" y="272">DM</text>
+      </g>
+    </svg>
+
+    <div class="side hz">
+      <div class="t">monitor</div>
+      <div class="s">hermes</div>
+      <div class="s"><b>z-ai/glm-5.2</b></div>
+    </div>
+
+    <div class="rbox mcard m1" style="top:0">
+      <span class="rid">responder_claude</span><span class="rrt">claude_code</span><span class="rmd">anthropic/claude-opus-5</span></div>
+    <div class="rbox mcard m2" style="top:65px">
+      <span class="rid">responder_codex</span><span class="rrt">codex</span><span class="rmd">openai/gpt-5.6-sol</span></div>
+    <div class="rbox mcard m3" style="top:130px">
+      <span class="rid">responder_antigravity</span><span class="rrt">agy</span><span class="rmd">google/gemini-3.1-pro-preview</span></div>
+    <div class="rbox mcard m4" style="top:195px">
+      <span class="rid">responder_kimi</span><span class="rrt">opencode</span><span class="rmd">moonshotai/kimi-k3</span></div>
+    <div class="rbox mcard m5" style="top:260px">
+      <span class="rid">responder_glm</span><span class="rrt">opencode</span><span class="rmd">z-ai/glm-5.2</span></div>
+
+    <div class="side co">
+      <div class="t">coordinator</div>
+      <div class="s">jac · <b>no model</b></div>
+      <div class="badge">NOT A MODEL</div>
+    </div>
+  </div>
+
+  <div class="ftr">
+    <div class="chip mono badc">allowPublish [] on sec.incident</div>
+    <div class="big"><em>independence</em> is enforced by the transport.</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="prov">REAL · contracts/mesh/channels.yaml</div>
+</div>

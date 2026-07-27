@@ -1,0 +1,121 @@
+<meta charset="utf-8">
+<title>scene10 — the coordinator: arithmetic, not a judge</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .main{display:grid;grid-template-columns:790px 1fr;gap:30px;align-items:stretch}
+  .badge{
+    display:inline-flex;align-items:center;gap:10px;white-space:nowrap;
+    font-size:15px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;
+    padding:8px 14px;border-radius:10px;
+    background:rgba(30,202,255,.12);border:1px solid rgba(30,202,255,.7);color:#cdf3ff;
+  }
+  .qhead,.qrow{display:grid;grid-template-columns:200px 118px 174px 62px 60px 78px;gap:10px;align-items:center}
+  .qhead{font-size:15px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--dim2)}
+  .qhead .r{text-align:right}
+  .qrow{min-height:29px}
+  .qrow .nm{font-family:var(--mono);font-size:16px;color:var(--mc);font-weight:700}
+  .qrow .vd{font-family:var(--mono);font-size:15px;color:#ffc6c2}
+  .qrow .cf{font-family:var(--mono);font-size:17px;font-weight:800;color:var(--mc);text-align:right}
+  .qrow .wt{font-family:var(--mono);font-size:15px;color:var(--dim2);text-align:right}
+  .qrow .ct{font-family:var(--mono);font-size:16px;font-weight:750;color:var(--text);text-align:right}
+  .sig{display:grid;grid-template-columns:1fr 78px;gap:10px;align-items:baseline}
+  .sig .lb{font-family:var(--mono);font-size:16px;color:var(--dim)}
+  .sig .tot{font-family:var(--mono);font-size:24px;font-weight:850;color:var(--win);text-align:right;letter-spacing:-.02em}
+
+  .rcol{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .scorenum{font-size:82px;font-weight:850;letter-spacing:-.045em;line-height:.92;color:var(--win)}
+  .ladwrap{position:relative;padding-bottom:24px}
+  .lad{position:relative;height:16px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.06)}
+  .lad > i{position:absolute;left:0;top:0;bottom:0;width:95%;border-radius:8px;
+           background:linear-gradient(90deg,rgba(38,231,155,.18),rgba(38,231,155,.8))}
+  .lad .thr{position:absolute;left:30%;top:-8px;bottom:-8px;width:3px;border-radius:2px;
+            background:var(--warn);box-shadow:0 0 10px rgba(255,215,53,.85)}
+  .lad .cap{position:absolute;left:95%;top:-8px;bottom:-8px;width:4px;border-radius:2px;
+            background:var(--win);box-shadow:0 0 12px rgba(38,231,155,.9)}
+  .ladwrap .lb{position:absolute;top:22px;font-family:var(--mono);font-size:15px;color:var(--dim2)}
+  .ladwrap .l0{left:0}
+  .ladwrap .lt{left:30%;transform:translateX(-50%);color:var(--warn);font-weight:700}
+  .ladwrap .ls{right:0;color:var(--win);font-weight:700}
+  .chiprow{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
+
+  .callout{
+    display:flex;flex-direction:column;gap:4px;flex:none;width:1118px;
+    padding:11px 20px;border-radius:13px;
+    background:rgba(255,215,53,.11);border:1px solid rgba(255,215,53,.66);
+  }
+  .callout .t{font-size:23px;font-weight:850;letter-spacing:-.01em;color:#fff0b0}
+  .callout .s{font-size:16.5px;line-height:1.3;color:var(--dim)}
+</style>
+
+<div class="stage" style="gap:12px">
+
+  <div class="row c" style="gap:14px">
+    <div class="kick">Beat 4 · the coordinator</div>
+    <div class="chip mono on" style="font-size:16px">rule · contain iff &gt;=3/5 malicious AND score &gt;= 1.5</div>
+    <div class="spacer"></div>
+    <div class="badge">not an llm judge · plain jac · model: null</div>
+  </div>
+
+  <div class="main">
+
+    <div class="card cool" style="padding:14px 22px;display:flex;flex-direction:column;gap:8px">
+      <div class="qhead">
+        <span>responder</span><span>verdict</span><span>confidence</span>
+        <span class="r">conf</span><span class="r">× w</span><span class="r">contrib</span>
+      </div>
+      <div class="qrow m1"><span class="nm">responder_claude</span><span class="vd">malicious</span><span class="mbar"><i style="width:93%"></i></span><span class="cf">0.93</span><span class="wt">× 1.0</span><span class="ct">0.93</span></div>
+      <div class="qrow m2"><span class="nm">responder_codex</span><span class="vd">malicious</span><span class="mbar"><i style="width:99%"></i></span><span class="cf">0.99</span><span class="wt">× 1.0</span><span class="ct">0.99</span></div>
+      <div class="qrow m3"><span class="nm">responder_antigravity</span><span class="vd">malicious</span><span class="mbar"><i style="width:95%"></i></span><span class="cf">0.95</span><span class="wt">× 1.0</span><span class="ct">0.95</span></div>
+      <div class="qrow m4"><span class="nm">responder_kimi</span><span class="vd">malicious</span><span class="mbar"><i style="width:95%"></i></span><span class="cf">0.95</span><span class="wt">× 1.0</span><span class="ct">0.95</span></div>
+      <div class="qrow m5"><span class="nm">responder_glm</span><span class="vd">malicious</span><span class="mbar"><i style="width:93%"></i></span><span class="cf">0.93</span><span class="wt">× 1.0</span><span class="ct">0.93</span></div>
+      <div class="rule"></div>
+      <div class="sig">
+        <span class="lb">score = Σ w(verdict) × confidence &nbsp;·&nbsp; w(malicious)=+1.0 · w(suspicious)=+0.4 · w(benign)=−1.0</span>
+        <span class="tot">4.75</span>
+      </div>
+    </div>
+
+    <div class="rcol">
+      <div class="kick cool" style="font-size:15px">weighted vote score · deterministic · no model call</div>
+      <div class="row c" style="gap:18px">
+        <div class="scorenum">4.75</div>
+        <div class="col" style="gap:3px;min-width:0">
+          <div class="h3">clears the threshold by <span class="win">+3.25</span></div>
+          <div class="sm mono">0.93 + 0.99 + 0.95 + 0.95 + 0.93</div>
+          <div class="sm mono">same inputs → same output, forever</div>
+        </div>
+      </div>
+
+      <div class="ladwrap">
+        <div class="lad"><i></i><span class="thr"></span><span class="cap"></span></div>
+        <span class="lb l0 mono">0</span>
+        <span class="lb lt mono">1.5 threshold</span>
+        <span class="lb ls mono">4.75 · max 5.00</span>
+      </div>
+
+      <div class="chiprow">
+        <span class="chip good"><span class="dot"></span>contain true</span>
+        <span class="chip good">quorum_met true</span>
+        <span class="chip">degraded false</span>
+      </div>
+      <div class="chiprow">
+        <span class="chip mono">verdict_counts malicious 5 · suspicious 0 · benign 0</span>
+        <span class="chip mono">voted 5/5</span>
+      </div>
+      <div class="chiprow">
+        <span class="chip mono">split → 1 bounded deliberation round → human</span>
+        <span class="chip mono">no_vote []</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row c" style="gap:14px">
+    <div class="callout">
+      <div class="t">per-responder weights: NOT YET DEFINED</div>
+      <div class="s">w() weights the <b>verdict class</b>, not which model said it — all five responders currently count exactly the same. It is the one number in this design we have not fixed, and we would rather say so than invent one.</div>
+    </div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="prov">REAL · runs/six-live/decision.json</div>
+</div>

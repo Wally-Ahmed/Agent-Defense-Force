@@ -1,0 +1,78 @@
+<meta charset="utf-8">
+<title>scene2 — refusable vs. legitimate, structurally identical</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .cols{display:grid;grid-template-columns:1fr 44px 1fr;flex:1;min-height:0;align-items:stretch}
+  .cl{display:flex;flex-direction:column;gap:9px;min-width:0;padding:13px 16px}
+  .cl h4{display:flex;align-items:center;gap:10px;white-space:nowrap;
+         font-size:15.5px;font-weight:850;letter-spacing:.105em;text-transform:uppercase}
+  .cl h4 em{font-style:normal;letter-spacing:.01em;text-transform:none;font-weight:700;
+            font-size:16px;color:var(--dim2)}
+
+  .rq{display:grid;grid-template-columns:52px 1fr 188px 92px;gap:11px;align-items:center;
+      font-family:var(--mono);font-size:16.5px;padding:8px 12px;border-radius:9px}
+  .rq .mt{font-weight:800;letter-spacing:.02em}
+  .rq .pt{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rq .rs{font-family:var(--sans);font-size:15.5px;font-weight:700;white-space:nowrap;
+          overflow:hidden;text-overflow:ellipsis}
+  .rq .st{font-weight:850;text-align:right;font-size:17px}
+
+  .bad .rq{background:rgba(255,81,74,.075);border:1px solid rgba(255,81,74,.30)}
+  .bad .rq .mt{color:#ff9b95} .bad .rq .rs{color:#ffb0ab} .bad .rq .st{color:var(--fail)}
+  .good .rq{background:rgba(38,231,155,.065);border:1px solid rgba(38,231,155,.30)}
+  .good .rq .mt{color:#7ff0c3} .good .rq .rs{color:#8dedc4} .good .rq .st{color:var(--win)}
+
+  .mid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .mid .vs{writing-mode:vertical-rl;font-size:15px;font-weight:850;letter-spacing:.24em;color:var(--line2)}
+
+  .claim{width:calc(100% - 216px);display:flex;align-items:center;justify-content:center;
+         padding:12px 24px;border-radius:13px;
+         background:linear-gradient(90deg,rgba(255,81,74,.10),rgba(30,202,255,.12));
+         border:1px solid rgba(30,202,255,.52)}
+  .claim b{font-size:36px;font-weight:850;letter-spacing:-.02em;line-height:1.06;white-space:nowrap}
+  .claim .a1{color:var(--dim)} .claim .a2{color:var(--accent2)}
+</style>
+
+<div class="stage">
+
+  <div class="row c" style="gap:14px">
+    <div class="kick">Same gateway · same tenant · same endpoints</div>
+    <div class="chip mono">every control answers one request at a time</div>
+    <div class="spacer"></div>
+    <div class="h3" style="color:var(--dim)">phase one is solved · phase two is not</div>
+  </div>
+
+  <div class="cols">
+
+    <div class="cl card bad" style="border-radius:16px 0 0 16px">
+      <h4 class="fail"><span class="dot"></span>Refusable <em>— and the control is right every time</em></h4>
+      <div class="rq"><span class="mt">GET</span><span class="pt">/api/projects</span><span class="rs">session expired</span><span class="st">401</span></div>
+      <div class="rq"><span class="mt">GET</span><span class="pt">/api/projects/312</span><span class="rs">wrong tenant</span><span class="st">403</span></div>
+      <div class="rq"><span class="mt">POST</span><span class="pt">/api/projects/312/members</span><span class="rs">role lacks permission</span><span class="st">403</span></div>
+      <div class="rq"><span class="mt">POST</span><span class="pt">/api/tasks/9104/comments</span><span class="rs">CSRF token missing</span><span class="st">403</span></div>
+      <div class="rq"><span class="mt">POST</span><span class="pt">/api/tasks</span><span class="rs">malformed · over limit</span><span class="st">422/429</span></div>
+    </div>
+
+    <div class="mid">
+      <div class="vrule" style="opacity:.45"></div>
+      <div class="vs">IDENTICAL</div>
+      <div class="vrule" style="opacity:.45"></div>
+    </div>
+
+    <div class="cl card good" style="border-radius:0 16px 16px 0">
+      <h4 class="win"><span class="dot"></span>Legitimate <em>— and refusing one would be wrong</em></h4>
+      <div class="rq"><span class="mt">GET</span><span class="pt">/api/projects</span><span class="rs">session valid</span><span class="st">200</span></div>
+      <div class="rq"><span class="mt">GET</span><span class="pt">/api/projects/312</span><span class="rs">tenant matches</span><span class="st">200</span></div>
+      <div class="rq"><span class="mt">POST</span><span class="pt">/api/projects/312/members</span><span class="rs">role permits</span><span class="st">200</span></div>
+      <div class="rq"><span class="mt">POST</span><span class="pt">/api/tasks/9104/comments</span><span class="rs">CSRF token present</span><span class="st">200</span></div>
+      <div class="rq"><span class="mt">POST</span><span class="pt">/api/tasks</span><span class="rs">well-formed · in limit</span><span class="st">200</span></div>
+    </div>
+
+  </div>
+
+  <div class="claim">
+    <b><span class="a1">the difference is not in a request —</span> <span class="a2">it is across requests.</span></b>
+  </div>
+
+  <div class="prov illus">ILLUSTRATIVE</div>
+</div>

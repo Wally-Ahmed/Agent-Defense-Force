@@ -1,0 +1,84 @@
+<meta charset="utf-8">
+<title>scene12 — the ordinary controls refuse</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .main{display:flex;gap:26px;flex:1;min-height:0;align-items:stretch}
+  .logwrap{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
+  /* column header — same 4-column geometry as .lrow, never restyles .lrow itself */
+  .lhead{display:grid;grid-template-columns:96px 78px 1fr auto;gap:16px;padding:0 15px;
+         font-size:12.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)}
+  .lhead .r{text-align:right}
+
+  .ladder{width:302px;flex:none;display:flex;flex-direction:column;padding:12px 13px}
+  .ladder .lt{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:850;
+              letter-spacing:.14em;text-transform:uppercase;color:var(--fail);padding-bottom:7px}
+  .steps{flex:1;display:flex;flex-direction:column;justify-content:space-between}
+  .step{display:grid;grid-template-columns:23px 1fr 26px;gap:7px;align-items:center;
+        font-family:var(--mono);font-size:15px;line-height:1;padding:2px 6px;border-radius:5px;
+        color:var(--dim2);border:1px solid transparent}
+  .step .n{color:var(--line2);font-weight:700}
+  .step .g{font-size:11.5px;letter-spacing:.06em;color:var(--line2);text-align:right}
+  .step.hit{background:rgba(255,81,74,.16);border-color:rgba(255,81,74,.55);color:#ffd0cc;font-weight:750}
+  .step.hit .n{color:var(--fail);font-weight:850}
+  .step.hit .g{color:#ffb0ab}
+</style>
+
+<div class="stage">
+
+  <div class="row c" style="gap:14px">
+    <div class="kick">Beat 1 · the ordinary controls</div>
+    <div class="chip mono">x-northwind-decision-order · frozen</div>
+    <div class="spacer"></div>
+    <div class="h3" style="color:var(--dim)">first condition that fails determines the response</div>
+  </div>
+
+  <div class="main">
+    <div class="logwrap">
+      <div class="lhead"><span>latency</span><span>status</span><span>request</span><span class="r">caught at step</span></div>
+      <div class="log">
+        <div class="lrow bad"><span class="t">0 ms</span><span class="st">429</span>
+          <span class="pth">POST /api/v1/auth/register</span><span class="why">02 · rate limit budget</span></div>
+        <div class="lrow bad"><span class="t">24 ms</span><span class="st">401</span>
+          <span class="pth">GET /api/tasks</span><span class="why">04 · credential not expired</span></div>
+        <div class="lrow bad"><span class="t">9 ms</span><span class="st">401</span>
+          <span class="pth">GET /api/exports/ex_ac_0731/download</span><span class="why">06 · step-up freshness</span></div>
+        <div class="lrow bad"><span class="t">17 ms</span><span class="st">403</span>
+          <span class="pth">POST /api/integrations/intg_gx_reporting/invoke</span><span class="why">10 · tenant binding</span></div>
+        <div class="lrow bad"><span class="t">18 ms</span><span class="st">403</span>
+          <span class="pth">GET /api/projects/p_gx_201</span><span class="why">12 · membership exists</span></div>
+        <div class="lrow bad"><span class="t">17 ms</span><span class="st">403</span>
+          <span class="pth">DELETE /api/projects/p_ac_104</span><span class="why">13 · role rank vs verb</span></div>
+      </div>
+    </div>
+
+    <div class="ladder card bad">
+      <div class="lt"><span class="dot"></span>6 of 15 fired</div>
+      <div class="steps">
+        <div class="step"><span class="n">01</span><span>SOURCE_BLOCKED</span><span class="g">gw</span></div>
+        <div class="step hit"><span class="n">02</span><span>RATE_LIMITED</span><span class="g">gw</span></div>
+        <div class="step"><span class="n">03</span><span>NO_SESSION</span><span class="g">gw</span></div>
+        <div class="step hit"><span class="n">04</span><span>SESSION_EXPIRED</span><span class="g">gw</span></div>
+        <div class="step"><span class="n">05</span><span>TOKEN_REVOKED</span><span class="g">gw</span></div>
+        <div class="step hit"><span class="n">06</span><span>REAUTH_REQUIRED</span><span class="g">gw</span></div>
+        <div class="step"><span class="n">07</span><span>CSRF_INVALID</span><span class="g">gw</span></div>
+        <div class="step"><span class="n">08</span><span>SUSPENDED</span><span class="g">gw</span></div>
+        <div class="step"><span class="n">09</span><span>READONLY_MODE</span><span class="g">gw</span></div>
+        <div class="step hit"><span class="n">10</span><span>TENANT_MISMATCH</span><span class="g">gw</span></div>
+        <div class="step"><span class="n">11</span><span>NOT_FOUND</span><span class="g">wk</span></div>
+        <div class="step hit"><span class="n">12</span><span>NOT_A_MEMBER</span><span class="g">wk</span></div>
+        <div class="step hit"><span class="n">13</span><span>INSUFFICIENT_ROLE</span><span class="g">wk</span></div>
+        <div class="step"><span class="n">14</span><span>NOT_FOUND</span><span class="g">wk</span></div>
+        <div class="step"><span class="n">15</span><span>VALIDATION_FAILED</span><span class="g">wk</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row c">
+    <div class="banner badb" style="flex:none">every one of these is <em style="font-style:normal;color:#fff">decidable from a single request</em></div>
+    <div class="chip strike">no correlation</div>
+    <div class="chip strike">no history</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="prov">REAL · audit_golden.jsonl · var/gateway-test/audit.jsonl</div>
+</div>

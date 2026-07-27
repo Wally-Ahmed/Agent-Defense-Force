@@ -1,0 +1,140 @@
+<meta charset="utf-8">
+<title>scene14 — the incident record</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .shapes{display:grid;grid-template-columns:1fr 1px 1fr;gap:20px;padding:11px 18px 9px;align-items:stretch}
+  .half{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .half h5{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:850;
+           letter-spacing:.11em;text-transform:uppercase}
+  .half svg{width:100%;height:104px;display:block}
+  .half .cap{font-family:var(--mono);font-size:14px;color:var(--dim2)}
+  .edgenote{display:flex;align-items:center;justify-content:center;gap:10px;
+            font-size:16px;font-weight:800;color:var(--dim);padding-top:2px}
+  .edgenote b{color:var(--accent2);font-weight:850}
+
+  .rec{display:grid;grid-template-columns:1.06fr 1.18fr 1.26fr;gap:16px;flex:1;min-height:0}
+  .rc{padding:11px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+  .rc h6{font-size:13px;font-weight:850;letter-spacing:.15em;text-transform:uppercase;color:var(--accent2)}
+  .kv{display:grid;grid-template-columns:104px 1fr;gap:9px;align-items:center;
+      font-family:var(--mono);font-size:15px;line-height:1.12}
+  .kv .k{color:var(--dim2)}
+  .kv .v{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv .v.off{color:var(--line2)}
+  .ev{font-family:var(--mono);font-size:15px;line-height:1.16;color:var(--text)}
+  .ev .p{color:var(--dim2)}
+  .fam{display:flex;flex-wrap:wrap;gap:6px}
+  .fam .chip{font-size:14.5px;padding:5px 10px;border-radius:8px}
+  .stg{display:flex;gap:5px;align-items:center;margin-top:1px}
+  .stg i{width:31px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+         font-family:var(--mono);font-style:normal;font-size:13.5px;font-weight:700;
+         background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--line2)}
+  .stg i.on{background:rgba(255,140,26,.20);border-color:var(--accent);color:#ffd9b0;font-weight:850}
+  .lbl{font-size:14px;color:var(--dim2);font-weight:700}
+  .srcmark{font-family:var(--mono);font-size:12.5px;color:var(--line2);letter-spacing:.03em}
+</style>
+
+<div class="stage">
+
+  <div class="row c" style="gap:13px">
+    <div class="kick cool">Beat 4 · correlation → one incident</div>
+    <div class="chip mono cool">incident.v1</div>
+    <div class="chip mono">inc_ebdc9299dcbf72b9</div>
+    <div class="chip mono">confidence 0.76</div>
+    <div class="spacer"></div>
+    <div class="h3" style="color:var(--dim)">the artifact the five responders walk</div>
+  </div>
+
+  <div class="card cool shapes">
+    <div class="half">
+      <h5 class="hi2"><span class="dot"></span>Normal shape · deep, narrow</h5>
+      <svg viewBox="0 0 460 104" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <g stroke="#8bd4ff" stroke-width="1.6" opacity=".62" fill="none">
+          <path d="M44 52 H140"/>
+          <path d="M156 52 H236"/><path d="M156 52 C196 52 200 22 236 22"/><path d="M156 52 C196 52 200 82 236 82"/>
+          <path d="M252 22 H352"/><path d="M252 22 C300 22 312 8 352 8"/>
+          <path d="M252 52 H352"/><path d="M252 52 C300 52 312 40 352 40"/>
+          <path d="M252 82 H352"/><path d="M252 82 C300 82 312 96 352 96"/>
+        </g>
+        <circle cx="30" cy="52" r="12" fill="#1ecaff" opacity=".95"/>
+        <circle cx="148" cy="52" r="9" fill="#8bd4ff" opacity=".9"/>
+        <g fill="#95b1ff" opacity=".9"><circle cx="244" cy="22" r="7"/><circle cx="244" cy="52" r="7"/><circle cx="244" cy="82" r="7"/></g>
+        <g fill="#a08dff" opacity=".82">
+          <circle cx="360" cy="8" r="5.5"/><circle cx="360" cy="22" r="5.5"/>
+          <circle cx="360" cy="40" r="5.5"/><circle cx="360" cy="52" r="5.5"/>
+          <circle cx="360" cy="82" r="5.5"/><circle cx="360" cy="96" r="5.5"/>
+        </g>
+        <g font-family="ui-monospace,Menlo,monospace" font-size="12.5" fill="#ae9f90">
+          <text x="30" y="80" text-anchor="middle">principal</text>
+          <text x="148" y="80" text-anchor="middle">p_ac_101</text>
+          <text x="410" y="56" text-anchor="middle">comments</text>
+        </g>
+      </svg>
+      <div class="cap">depth 4 · breadth 1 &nbsp;·&nbsp; principal → project → tasks → comments</div>
+    </div>
+
+    <div class="vrule" style="opacity:.5"></div>
+
+    <div class="half">
+      <h5 class="hi"><span class="dot"></span>Campaign shape · flat, wide</h5>
+      <svg viewBox="0 0 460 104" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <g stroke="#ff8c1a" stroke-width="1.7" opacity=".68" fill="none">
+          <path d="M44 52 C170 52 210 8 300 8"/>
+          <path d="M44 52 C170 52 210 30 300 30"/>
+          <path d="M44 52 H300"/>
+          <path d="M44 52 C170 52 210 74 300 74"/>
+          <path d="M44 52 C170 52 210 96 300 96"/>
+        </g>
+        <circle cx="30" cy="52" r="12" fill="#ff8c1a" opacity=".95"/>
+        <g fill="#ffd735" opacity=".92">
+          <circle cx="308" cy="8" r="7"/><circle cx="308" cy="30" r="7"/><circle cx="308" cy="52" r="7"/>
+          <circle cx="308" cy="74" r="7"/><circle cx="308" cy="96" r="7"/>
+        </g>
+        <g font-family="ui-monospace,Menlo,monospace" font-size="12.5" fill="#d6c7b7">
+          <text x="322" y="13">p_ac_101</text><text x="322" y="35">p_ac_103</text><text x="322" y="57">p_ac_104</text>
+          <text x="322" y="79">p_ac_190</text><text x="322" y="101">p_ac_999</text>
+        </g>
+        <text x="30" y="80" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="12.5" fill="#ae9f90">principal</text>
+      </svg>
+      <div class="cap">depth 1 · breadth 5 &nbsp;·&nbsp; 3 tenants · 30.2 s <span class="srcmark">— attack/attack_trace.jsonl</span></div>
+    </div>
+  </div>
+
+  <div class="edgenote">every edge <b>individually authorized</b> — the anomaly is the shape, not any request in it</div>
+
+  <div class="rec">
+    <div class="card rc">
+      <h6>join_keys</h6>
+      <div class="kv"><span class="k">principal</span><span class="v">c_32bfd983ffdd2f41</span></div>
+      <div class="kv"><span class="k">tenant</span><span class="v">t_acme</span></div>
+      <div class="kv"><span class="k">session_ids</span><span class="v">sess_anon_5b31d0e8a4c76f92</span></div>
+      <div class="kv"><span class="k"></span><span class="v">sess_c9f4a1b2e7d30845</span></div>
+      <div class="kv"><span class="k">src_ips</span><span class="v off">∅ unset in this record</span></div>
+      <div class="kv"><span class="k">user_agents</span><span class="v off">∅ unset in this record</span></div>
+    </div>
+
+    <div class="card rc">
+      <h6>evidence[3] · axes[5]</h6>
+      <div class="ev"><span class="p">window:</span>1773756210383<span class="p">:c_32bfd983ffdd2f41</span></div>
+      <div class="ev"><span class="p">window:</span>1773756225383<span class="p">:c_32bfd983ffdd2f41</span></div>
+      <div class="ev"><span class="p">window:</span>1773756300383<span class="p">:c_32bfd983ffdd2f41</span></div>
+      <div class="rule" style="margin:3px 0"></div>
+      <div class="ev" style="color:var(--dim);font-size:14px;line-height:1.3">auth_fail · distinct_paths · path_entropy<br>new_endpoints_first_seen · session_ids</div>
+    </div>
+
+    <div class="card rc">
+      <h6>families 3 / 7 · stage_signatures</h6>
+      <div class="fam">
+        <span class="chip on">denial_shape</span><span class="chip on">breadth</span>
+        <span class="chip">novelty</span><span class="chip">cadence</span><span class="chip">pivot</span>
+        <span class="chip on">escalation</span><span class="chip">canary</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="lbl">stage_signatures [2,3,4] of the 10 authorized-scenario steps</div>
+      <div class="stg">
+        <i>1</i><i class="on">2</i><i class="on">3</i><i class="on">4</i><i>5</i><i>6</i><i>7</i><i>8</i><i>9</i><i>10</i>
+      </div>
+    </div>
+  </div>
+
+  <div class="prov left">REAL · runs/six-live/incidents.jsonl</div>
+</div>

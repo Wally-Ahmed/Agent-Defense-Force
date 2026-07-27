@@ -1,0 +1,94 @@
+<meta charset="utf-8">
+<title>scene8 — hermes: rolling 90 s window, none of it a violation</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .rail{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  .tile{border:1px solid var(--line);border-radius:12px;background:rgba(28,22,17,.72);
+        padding:7px 13px;display:flex;flex-direction:column;gap:1px;min-width:0}
+  .tile .tt{font-family:var(--mono);font-size:15px;color:var(--dim2);line-height:1.25}
+  .tile .tv{font-size:21px;font-weight:850;letter-spacing:-.025em;line-height:1.15;color:var(--dim2)}
+  .tile .tg{font-size:15px;font-weight:750;color:var(--dim2);line-height:1.2}
+  .tile.ev{border-color:rgba(248,153,255,.5);
+           background:linear-gradient(168deg,rgba(248,153,255,.09) 0%,rgba(36,28,22,.92) 100%)}
+  .tile.ev .tv{color:var(--text)}
+  .tile.ev .tg{color:var(--hermes)}
+  .tile.live{border-color:rgba(255,140,26,.85);box-shadow:0 0 0 1px rgba(255,140,26,.28),0 12px 26px -20px #000}
+  .tile.live .tg{color:var(--accent)}
+  .tile.live .tv{color:var(--text)}
+
+  .fhead{display:flex;align-items:baseline;gap:14px}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:30px}
+  .fcol{display:flex;flex-direction:column;gap:5px}
+  .frow{display:grid;grid-template-columns:222px 178px 76px 60px 1fr;gap:10px;align-items:center;min-height:23px}
+  .frow .nm{font-family:var(--mono);font-size:15px;color:var(--text);white-space:nowrap}
+  .frow .vl{font-family:var(--mono);font-size:15px;color:var(--text);text-align:right}
+  .frow .rt{font-family:var(--mono);font-size:15px;color:var(--dim2);text-align:right}
+  .frow.over .rt{color:var(--accent);font-weight:700}
+  .frow .tag{font-size:15px;font-weight:700;color:var(--dim2);letter-spacing:.005em;white-space:nowrap;opacity:.72}
+  .trk{position:relative;height:11px;border-radius:6px;background:rgba(255,255,255,.065)}
+  .trk > i{display:block;height:100%;border-radius:6px;background:var(--line2)}
+  .trk.over > i{background:var(--accent);box-shadow:0 0 12px rgba(255,140,26,.6)}
+  .trk.under > i{background:var(--line2);opacity:.5}
+  .trk::after{content:"";position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;
+              background:var(--line2);opacity:.95;border-radius:1px}
+  .trk.nil{opacity:.42}
+  .foot8{display:flex;align-items:center;gap:16px}
+</style>
+
+<div class="stage" style="gap:12px">
+
+  <div class="row c" style="gap:14px">
+    <div class="kick">Beat 2 · Hermes · always-on sensing</div>
+    <div class="chip mono" style="border-color:rgba(248,153,255,.55);color:#ffd2ff">GLM-5.2 · cheapest · never stops</div>
+    <div class="chip mono">window.v1 · 15 s frames · rolling 90 s</div>
+    <div class="spacer"></div>
+    <div class="h3" style="color:var(--dim)">actor c_32bfd983ffdd2f41 · t_acme</div>
+  </div>
+
+  <div class="rail">
+    <div class="tile"><div class="tt">+00 – 15 s</div><div class="tv">0 req</div><div class="tg">quiet</div></div>
+    <div class="tile"><div class="tt">+15 – 30 s</div><div class="tv">0 req</div><div class="tg">quiet</div></div>
+    <div class="tile"><div class="tt">+30 – 45 s</div><div class="tv">0 req</div><div class="tg">quiet</div></div>
+    <div class="tile ev"><div class="tt">+45 – 60 s</div><div class="tv">1 req</div><div class="tg">in evidence</div></div>
+    <div class="tile ev"><div class="tt">+60 – 75 s</div><div class="tv">1 req</div><div class="tg">in evidence</div></div>
+    <div class="tile ev live"><div class="tt">+75 – 90 s</div><div class="tv">2 req</div><div class="tg">drawn below ↓</div></div>
+  </div>
+
+  <div class="col" style="gap:6px">
+    <div class="fhead">
+      <div class="kick cool" style="font-size:15px">feature vector · actor vs its own rolling p95</div>
+      <div class="sm mono">bar = value ÷ own p95 &nbsp;·&nbsp; centre tick = 1.00× &nbsp;·&nbsp; 7 of 14 above baseline</div>
+      <div class="spacer"></div>
+      <div class="sm mono" style="color:var(--dim2)">window_start 1773756975383</div>
+    </div>
+
+    <div class="fgrid">
+      <div class="fcol">
+        <div class="frow over"><span class="nm">req</span><span class="trk over"><i style="width:54%"></i></span><span class="vl">2</span><span class="rt">1.08×</span><span class="tag">not a violation</span></div>
+        <div class="frow over"><span class="nm">distinct_paths</span><span class="trk over"><i style="width:54%"></i></span><span class="vl">2</span><span class="rt">1.08×</span><span class="tag">not a violation</span></div>
+        <div class="frow over"><span class="nm">path_entropy</span><span class="trk over"><i style="width:59%"></i></span><span class="vl">1.0</span><span class="rt">1.18×</span><span class="tag">not a violation</span></div>
+        <div class="frow"><span class="nm">auth_fail</span><span class="trk nil"><i style="width:0%"></i></span><span class="vl">0</span><span class="rt">—</span><span class="tag">not a violation</span></div>
+        <div class="frow over"><span class="nm">authz_deny</span><span class="trk over"><i style="width:100%"></i></span><span class="vl">2</span><span class="rt">2.00×</span><span class="tag">not a violation</span></div>
+        <div class="frow"><span class="nm">deny_ratio</span><span class="trk"><i style="width:50%"></i></span><span class="vl">1.0</span><span class="rt">1.00×</span><span class="tag">not a violation</span></div>
+        <div class="frow over"><span class="nm">new_endpoints_first_seen</span><span class="trk over"><i style="width:54%"></i></span><span class="vl">2</span><span class="rt">1.08×</span><span class="tag">not a violation</span></div>
+      </div>
+      <div class="fcol">
+        <div class="frow"><span class="nm">src_ips_distinct</span><span class="trk"><i style="width:50%"></i></span><span class="vl">1</span><span class="rt">1.00×</span><span class="tag">not a violation</span></div>
+        <div class="frow"><span class="nm">ua_distinct</span><span class="trk"><i style="width:50%"></i></span><span class="vl">1</span><span class="rt">1.00×</span><span class="tag">not a violation</span></div>
+        <div class="frow over"><span class="nm">cross_tenant_attempts</span><span class="trk over"><i style="width:100%"></i></span><span class="vl">2</span><span class="rt">2.00×</span><span class="tag">not a violation</span></div>
+        <div class="frow"><span class="nm">canary_touch</span><span class="trk nil"><i style="width:0%"></i></span><span class="vl">false</span><span class="rt">—</span><span class="tag">not a violation</span></div>
+        <div class="frow"><span class="nm">post_deny_pivot_ms_p50</span><span class="trk under"><i style="width:46%"></i></span><span class="vl">12340.5</span><span class="rt">0.91×</span><span class="tag">not a violation</span></div>
+        <div class="frow over"><span class="nm">integration_calls</span><span class="trk over"><i style="width:100%"></i></span><span class="vl">2</span><span class="rt">2.00×</span><span class="tag">not a violation</span></div>
+        <div class="frow"><span class="nm">export_bytes</span><span class="trk under"><i style="width:17%"></i></span><span class="vl">269</span><span class="rt">0.34×</span><span class="tag">not a violation</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot8">
+    <div class="banner warm" style="flex:none">not deciding guilt · <em>deciding what deserves a real look</em></div>
+    <div class="chip mono">“Volume was not a trigger.” — inc_cb5a22376228f5d8 · conf 0.76</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="prov">REAL · runs/six-live/frames.jsonl</div>
+</div>

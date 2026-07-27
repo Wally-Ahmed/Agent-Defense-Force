@@ -1,0 +1,138 @@
+<meta charset="utf-8">
+<title>scene6 — Northwind Projects, not deliberately vulnerable</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .stage{gap:13px}
+  .head{display:flex;align-items:center;gap:14px}
+  .head > *{white-space:nowrap}
+
+  .ring{display:flex;flex:1;min-height:0;align-items:stretch;gap:0}
+  .side{display:flex;flex-direction:column;justify-content:space-between;width:452px;flex:none}
+
+  .ctl{display:flex;flex-direction:column;justify-content:center;gap:3px;
+       padding:8px 14px;border-radius:11px;height:62px;
+       background:linear-gradient(168deg,rgba(38,231,155,.10) 0%,rgba(38,231,155,.035) 100%);
+       border:1px solid rgba(38,231,155,.46);
+       box-shadow:0 0 0 1px rgba(38,231,155,.08), 0 12px 26px -22px #000}
+  .ctl .nm{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:17px;font-weight:800;color:#b6ffe1;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctl .nm .dot{width:8px;height:8px;color:var(--win)}
+  .ctl .de{font-size:15px;line-height:1.2;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* hairline harness joining each chip to the core */
+  .conn{position:relative;width:38px;flex:none}
+  .conn i{position:absolute;background:var(--line2);opacity:.5}
+  .conn i.v{width:1px;top:31px;bottom:31px;opacity:.62}
+  .conn i.h{height:1px}
+  .conn i.h0{top:31px}
+  .conn i.h1{top:calc(31px + (100% - 62px) / 3)}
+  .conn i.h2{top:calc(31px + (100% - 62px) / 3 * 2)}
+  .conn i.h3{bottom:31px}
+
+  .core{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;
+        padding:14px 18px;border-radius:18px;
+        background:radial-gradient(420px 220px at 50% 40%, rgba(255,140,26,.10), transparent 70%),
+                   linear-gradient(170deg,var(--panel2) 0%,var(--panel) 100%);
+        border:1px solid rgba(255,140,26,.5);
+        box-shadow:0 0 0 1px rgba(255,140,26,.10), 0 20px 48px -28px #000}
+  .core .t{font-size:37px;font-weight:850;letter-spacing:-.022em;line-height:1;text-align:center}
+  .core .t em{font-style:normal;color:var(--accent)}
+  .core .sub{font-size:15.5px;font-weight:700;color:var(--dim2);letter-spacing:.02em;text-align:center}
+  .core .rule{width:86%}
+  .dm{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:16.5px;font-weight:750;color:var(--text)}
+  .dm span.a{color:var(--line2);font-weight:800}
+  .sens{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:14.8px;color:var(--dim2)}
+  .sens b{font-weight:750;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.05);
+          border:1px solid var(--line);color:var(--dim)}
+
+  .banner.good{font-size:25px;letter-spacing:.005em;padding:12px 26px;border-width:2px}
+  .banner.good .x{font-size:19px;font-weight:750;color:#8dedc4;letter-spacing:0}
+</style>
+
+<div class="stage">
+
+  <div class="head">
+    <div class="kick">Beat 3 · the target</div>
+    <div class="chip mono">multi-tenant · Jac walkers</div>
+    <div class="chip mono cool">8 shipped controls · all on</div>
+    <div class="spacer"></div>
+    <div class="sm mono">contracts/app_api.openapi.yaml · frozen</div>
+  </div>
+
+  <div class="ring">
+
+    <div class="side">
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>__Host-sid</div>
+        <div class="de">HttpOnly · Secure · SameSite=Lax · Path=/ · no Domain</div>
+      </div>
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>__Host-csrf · double-submit</div>
+        <div class="de">X-CSRF-Token · constant-time compare · every non-GET</div>
+      </div>
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>nwp_ bearer tokens</div>
+        <div class="de">bcrypt hash, cost 12 · never stored or logged in clear</div>
+      </div>
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>15-step deny order</div>
+        <div class="de">fixed order · the first failing check decides the reply</div>
+      </div>
+    </div>
+
+    <div class="conn">
+      <i class="v" style="left:50%"></i>
+      <i class="h h0" style="left:0;width:50%"></i>
+      <i class="h h1" style="left:0;width:50%"></i>
+      <i class="h h2" style="left:0;width:50%"></i>
+      <i class="h h3" style="left:0;width:50%"></i>
+      <i class="h" style="left:50%;right:0;top:50%"></i>
+    </div>
+
+    <div class="core">
+      <div class="sub">THE TARGET</div>
+      <div class="t">Northwind Projects · <em>Jac</em></div>
+      <div class="rule"></div>
+      <div class="dm">Tenant<span class="a">→</span>Project<span class="a">→</span>Task<span class="a">→</span>Comment</div>
+      <div class="sens">sensitivity <b>normal</b> <b>confidential</b> <b>canary</b></div>
+      <div class="sub">resolution walks the subtree — a foreign id is unreachable, not merely absent</div>
+    </div>
+
+    <div class="conn">
+      <i class="v" style="left:50%"></i>
+      <i class="h h0" style="right:0;width:50%"></i>
+      <i class="h h1" style="right:0;width:50%"></i>
+      <i class="h h2" style="right:0;width:50%"></i>
+      <i class="h h3" style="right:0;width:50%"></i>
+      <i class="h" style="left:0;width:50%;top:50%"></i>
+    </div>
+
+    <div class="side">
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>Membership roles</div>
+        <div class="de">owner &gt; admin &gt; member &gt; viewer · per user, per tenant</div>
+      </div>
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>per-route rate limits</div>
+        <div class="de">8 budgets · per identity, source_ip, tenant, api_token</div>
+      </div>
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>restrictive CORS</div>
+        <div class="de">one allowed origin · no wildcard · credentials scoped</div>
+      </div>
+      <div class="ctl">
+        <div class="nm"><span class="dot"></span>security headers</div>
+        <div class="de">HSTS · CSP default-src 'none' · nosniff · no-referrer</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="banner good">
+    <span class="dot" style="color:var(--win)"></span>
+    <span style="white-space:nowrap">NOT DELIBERATELY VULNERABLE — nothing was weakened.</span>
+    <span class="x">a correctly secured app still answers a valid credential</span>
+  </div>
+
+  <div class="prov">REAL · contracts/app_api.openapi.yaml + app/security/</div>
+</div>

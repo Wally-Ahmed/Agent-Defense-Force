@@ -1,0 +1,62 @@
+<meta charset="utf-8">
+<title>scene5 — the thesis, stated exactly</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* kit's `.stage > *{position:relative}` out-specifies `.bleed`; restore it */
+  .stage > .bleed{position:absolute;inset:0}
+
+  .wrap{display:flex;flex-direction:column;gap:22px;margin-top:16px}
+
+  .thesis{font-size:35px;font-weight:700;line-height:1.28;letter-spacing:-.016em;color:var(--text)}
+  .thesis .lead{color:var(--dim)}
+  .thesis em{font-style:normal;font-weight:850;padding-bottom:2px;
+             border-bottom:2px solid color-mix(in srgb,var(--ac) 55%,transparent);color:var(--ac)}
+  .a1{--ac:var(--accent2)} .a2{--ac:var(--m4)} .a3{--ac:var(--win)}
+
+  .divrow{display:flex;align-items:center;gap:16px}
+  .divrow i{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line2),transparent);opacity:.8}
+  .divrow span{font-size:15.5px;font-weight:850;letter-spacing:.2em;text-transform:uppercase;
+               color:var(--dim2);white-space:nowrap}
+
+  .cmts{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .cmt{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:12px;
+       background:linear-gradient(168deg,color-mix(in srgb,var(--ac) 10%,var(--panel)) 0%,var(--panel2) 100%);
+       border:1px solid color-mix(in srgb,var(--ac) 52%,transparent);
+       box-shadow:0 0 0 1px color-mix(in srgb,var(--ac) 12%,transparent),0 14px 30px -22px #000}
+  .cmt .n{font-family:var(--mono);font-size:22px;font-weight:850;line-height:1.1;color:var(--ac);flex:none}
+  .cmt .tx{font-size:17.5px;font-weight:750;line-height:1.24;letter-spacing:-.005em;color:var(--text)}
+  .c1{--ac:var(--accent2)} .c2{--ac:var(--m3)} .c3{--ac:var(--m5)} .c4{--ac:var(--win)}
+</style>
+
+<div class="stage">
+  <div class="bleed" style="background:radial-gradient(900px 420px at 50% 34%,rgba(30,202,255,.07),transparent 70%)"></div>
+
+  <div class="wrap">
+
+    <div class="row c" style="gap:14px">
+      <div class="kick cool">The claim · stated exactly as we would defend it</div>
+      <div class="spacer"></div>
+      <div class="chip mono">verbatim · must not be reworded</div>
+    </div>
+
+    <div class="thesis">
+      <span class="lead">Traditional controls can reject invalid requests, but a stolen valid credential
+      operated by an autonomous agent may look normal one request at a time.</span>
+      Our system <em class="a1">recognizes the coordinated behavior</em>, assembles
+      <em class="a2">five independent model assessments</em>, and applies
+      <em class="a3">narrowly scoped containment</em> through enforceable Jac policy.
+    </div>
+
+    <div class="divrow"><i></i><span>Four commitments in one sentence</span><i></i></div>
+
+    <div class="cmts">
+      <div class="cmt c1"><span class="n">01</span><span class="tx">Detect the pattern, not the request.</span></div>
+      <div class="cmt c2"><span class="n">02</span><span class="tx">Decide with five models, none of which decides alone.</span></div>
+      <div class="cmt c3"><span class="n">03</span><span class="tx">Contain narrowly.</span></div>
+      <div class="cmt c4"><span class="n">04</span><span class="tx">Be able to prove it and undo it.</span></div>
+    </div>
+
+  </div>
+
+  <div class="prov">REAL · walkthrough/script.md § scene 5</div>
+</div>

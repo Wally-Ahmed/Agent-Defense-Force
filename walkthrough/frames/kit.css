@@ -1,0 +1,167 @@
+/* ============================================================================
+   SCENE FRAME KIT — 1800x600 (3:1)
+   Palette is copied VERBATIM from walkthrough/index.html :root. Do not eyeball
+   colours; use the variables. Temperature encodes side:
+     warm gold -> orange -> red = the attack surface and its heat
+     vivid cyan -> blue -> violet = the defensive mesh
+   The five model colours are a deliberate luminance ladder (m1 .800 down to
+   m5 .262) and must stay distinguishable side by side on a washed-out projector.
+
+   SAFE AREA — MEASURED, not guessed. The strip is 1098px wide; at >=1000px
+   viewport height it uses object-fit:cover, and index.html's @keyframes kenburns
+   holds at scale(1.17) translate(-2.5%,-2%) for most of every scene. At 1920x1080
+   the visible source rect at that end state is:
+        x 176..1714    y 89..535
+   (Below 1000px viewport height the strip switches to object-fit:contain and the
+   whole frame is visible, just smaller — so cover at 1920x1080 is the binding case.)
+
+   THEREFORE: `.stage` padding IS the safe box — 94px top/bottom, 180px left/right,
+   i.e. a usable canvas of 1440 x 412 centred in the 1800 x 600 frame.
+   NEVER override it. Text, numbers and any load-bearing mark live inside it.
+   Only decorative bleed (`.bleed`) may extend past it.
+   ========================================================================== */
+
+:root{
+  --bg:#0f0b08; --bg2:#150f0b; --panel:#1c1611; --panel2:#241c16; --panel3:#2e241c;
+  --line:#4d3c2f; --line2:#8a7059;
+  --text:#fdf5ec; --dim:#d6c7b7; --dim2:#ae9f90;
+  --accent:#ff8c1a; --accent2:#1ecaff;
+  --hermes:#f899ff;
+  --m1:#44ffff;  /* Claude Opus 5 · Claude Code   */
+  --m2:#8bd4ff;  /* GPT-5.6 Sol · Codex          */
+  --m3:#95b1ff;  /* Gemini 3.1 Pro · Antigravity */
+  --m4:#a08dff;  /* Kimi K3 · OpenCode           */
+  --m5:#be5eff;  /* GLM-5.2 · OpenCode           */
+  --win:#26e79b; --warn:#ffd735; --fail:#ff514a;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1800px;height:600px;overflow:hidden}
+body{
+  background:
+    radial-gradient(1200px 520px at 14% -10%, rgba(255,140,26,.13), transparent 62%),
+    radial-gradient(1100px 520px at 88% 112%, rgba(30,202,255,.10), transparent 62%),
+    linear-gradient(160deg, var(--bg) 0%, var(--bg2) 58%, #120c08 100%);
+  font-family:var(--sans); color:var(--text);
+  -webkit-font-smoothing:antialiased;
+}
+/* faint grid so the frame reads as instrumentation, not a slide */
+body::before{
+  content:""; position:absolute; inset:0; pointer-events:none; opacity:.5;
+  background-image:
+    linear-gradient(rgba(255,140,26,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,140,26,.045) 1px, transparent 1px);
+  background-size:60px 60px;
+  -webkit-mask-image:radial-gradient(1400px 560px at 50% 50%, #000 30%, transparent 84%);
+          mask-image:radial-gradient(1400px 560px at 50% 50%, #000 30%, transparent 84%);
+}
+
+/* ---------- stage ---------- */
+/* the safe box. 1440 x 432 of usable canvas. DO NOT override the padding. */
+.stage{position:absolute;inset:0;padding:94px 180px;display:flex;flex-direction:column;gap:16px}
+.bleed{position:absolute;inset:0;pointer-events:none;z-index:0}
+.stage > *{position:relative;z-index:1}
+.row{display:flex;gap:26px;align-items:stretch}
+.row.c{align-items:center}
+.col{display:flex;flex-direction:column;gap:14px}
+.grow{flex:1;min-width:0}
+.spacer{flex:1}
+
+/* ---------- type ---------- */
+.kick{font-size:16px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+.kick.cool{color:var(--accent2)}
+.kick.dim{color:var(--dim2)}
+.h1{font-size:46px;font-weight:850;letter-spacing:-.02em;line-height:1.06}
+.h2{font-size:32px;font-weight:800;letter-spacing:-.015em;line-height:1.12}
+.h3{font-size:23px;font-weight:750;letter-spacing:-.005em}
+.p{font-size:19px;line-height:1.5;color:var(--dim)}
+.sm{font-size:16.5px;line-height:1.45;color:var(--dim2)}
+.xs{font-size:14px;line-height:1.4;color:var(--dim2)}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+.hi{color:var(--accent)}
+.hi2{color:var(--accent2)}
+.win{color:var(--win)} .warn{color:var(--warn)} .fail{color:var(--fail)}
+.dimt{color:var(--dim2)}
+.num{font-size:96px;font-weight:850;letter-spacing:-.045em;line-height:.92}
+.num.sm2{font-size:62px}
+
+/* ---------- surfaces ---------- */
+.card{
+  background:linear-gradient(170deg,var(--panel) 0%,var(--panel2) 100%);
+  border:1px solid var(--line); border-radius:16px; padding:20px 24px;
+  box-shadow:0 16px 34px -22px rgba(0,0,0,.85);
+}
+.card.warm{border-color:rgba(255,140,26,.55);box-shadow:0 0 0 1px rgba(255,140,26,.10),0 16px 34px -22px #000}
+.card.cool{border-color:rgba(30,202,255,.48);box-shadow:0 0 0 1px rgba(30,202,255,.10),0 16px 34px -22px #000}
+.card.bad{border-color:rgba(255,81,74,.6);background:linear-gradient(170deg,#1f1310 0%,#2a1613 100%)}
+.card.good{border-color:rgba(38,231,155,.5);background:linear-gradient(170deg,#0e1a15 0%,#12241c 100%)}
+.card.flat{background:rgba(28,22,17,.72)}
+
+/* ---------- chips ---------- */
+.chip{
+  display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+  font-size:15px;font-weight:700;letter-spacing:.01em;
+  padding:7px 13px;border-radius:9px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+}
+.chip.mono{font-size:14.5px;font-weight:650}
+.chip.on{background:rgba(255,140,26,.14);border-color:rgba(255,140,26,.75);color:var(--text)}
+.chip.cool{background:rgba(30,202,255,.12);border-color:rgba(30,202,255,.62);color:#cdf3ff}
+.chip.good{background:rgba(38,231,155,.13);border-color:rgba(38,231,155,.62);color:#b6ffe1}
+.chip.warnc{background:rgba(255,215,53,.13);border-color:rgba(255,215,53,.62);color:#fff0b0}
+.chip.badc{background:rgba(255,81,74,.13);border-color:rgba(255,81,74,.68);color:#ffc6c2}
+.chip.strike{text-decoration:line-through;opacity:.62;border-style:dashed}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:currentColor;box-shadow:0 0 10px currentColor}
+
+/* provenance / disclosure markers */
+.prov{
+  position:absolute;right:180px;bottom:70px;display:flex;gap:9px;align-items:center;
+  font-family:var(--mono);font-size:13.5px;font-weight:650;letter-spacing:.05em;
+  padding:6px 12px;border-radius:8px;
+  background:rgba(38,231,155,.10);border:1px solid rgba(38,231,155,.45);color:#8dedc4;
+}
+.prov.illus{background:rgba(255,215,53,.12);border-color:rgba(255,215,53,.6);color:#ffe98a}
+.prov.left{left:180px;right:auto}
+.prov.inline{position:static}
+
+/* ---------- model ladder ---------- */
+.m1{--mc:var(--m1)} .m2{--mc:var(--m2)} .m3{--mc:var(--m3)} .m4{--mc:var(--m4)} .m5{--mc:var(--m5)}
+.mcard{
+  border:1px solid color-mix(in srgb, var(--mc) 55%, transparent);
+  background:linear-gradient(168deg, color-mix(in srgb, var(--mc) 11%, var(--panel)) 0%, var(--panel2) 100%);
+  border-radius:14px;padding:14px 16px;
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--mc) 14%, transparent), 0 14px 30px -22px #000;
+}
+.mcard .mname{color:var(--mc);font-weight:850;font-size:18px;letter-spacing:-.01em}
+.mbar{height:10px;border-radius:6px;background:rgba(255,255,255,.07);overflow:hidden}
+.mbar > i{display:block;height:100%;border-radius:6px;background:var(--mc);box-shadow:0 0 14px var(--mc)}
+
+/* ---------- log rows (scenes 12 / 13 share this grammar EXACTLY) ---------- */
+.log{font-family:var(--mono);font-size:18px;line-height:1;display:flex;flex-direction:column;gap:9px}
+.lrow{display:grid;grid-template-columns:96px 78px 1fr auto;gap:16px;align-items:center;
+  padding:10px 14px;border-radius:9px;background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.05)}
+.lrow .t{color:var(--dim2);font-size:15.5px}
+.lrow .st{font-weight:850;font-size:18px}
+.lrow.bad{background:rgba(255,81,74,.075);border-color:rgba(255,81,74,.34)}
+.lrow.bad .st{color:var(--fail)}
+.lrow.ok{background:rgba(38,231,155,.065);border-color:rgba(38,231,155,.30)}
+.lrow.ok .st{color:var(--win)}
+.lrow .pth{color:var(--text);font-size:17.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .why{font-family:var(--sans);font-size:14.5px;font-weight:750;color:var(--warn);white-space:nowrap}
+
+/* ---------- misc primitives ---------- */
+.rule{height:1px;background:linear-gradient(90deg,transparent,var(--line2),transparent);opacity:.7}
+.vrule{width:1px;align-self:stretch;background:linear-gradient(180deg,transparent,var(--line2),transparent);opacity:.75}
+.banner{
+  display:flex;align-items:center;justify-content:center;gap:14px;
+  font-size:22px;font-weight:850;letter-spacing:.01em;
+  padding:13px 26px;border-radius:12px;
+}
+.banner.good{background:rgba(38,231,155,.11);border:1px solid rgba(38,231,155,.55);color:#c7ffe8}
+.banner.warm{background:rgba(255,140,26,.11);border:1px solid rgba(255,140,26,.6);color:#ffd9b0}
+.banner.badb{background:rgba(255,81,74,.11);border:1px solid rgba(255,81,74,.6);color:#ffcbc7}
+.foot{font-size:22px;font-weight:800;letter-spacing:-.005em;color:var(--text);text-align:center}
+.foot em{font-style:normal;color:var(--accent)}
+.arrow{color:var(--line2);font-size:22px;font-weight:800}
