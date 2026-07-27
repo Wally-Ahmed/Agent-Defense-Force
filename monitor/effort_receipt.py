@@ -361,6 +361,18 @@ def receipt_path(run_id):
     return _repo_root() / "runs" / _validate_run_id(run_id) / "effort.jsonl"
 
 
+# The fields that constitute the monitor's BINDING: what model ran, at what effort,
+# and whether the run may honestly be called live. Everything else on a receipt is
+# provenance prose -- the runtime-version banner, the `source` narrative, timestamps --
+# which two different probes legitimately word differently for the same binding.
+_BINDING_FIELDS = ("model_effective", "effort_effective", "mocked", "blocked", "downgraded")
+
+
+def _same_binding(a, b):
+    """True when two receipts describe the same model/effort/honesty binding."""
+    return all(a.get(f) == b.get(f) for f in _BINDING_FIELDS)
+
+
 def emit_receipt(backend, run_id):
     """Append the monitor's receipt to runs/<run_id>/effort.jsonl. Returns (path, receipt).
 
@@ -391,6 +403,20 @@ def emit_receipt(backend, run_id):
                 continue
             if isinstance(parsed, dict) and parsed.get("agent") == AGENT:
                 if json.dumps(parsed, ensure_ascii=False, sort_keys=True) == line:
+                    return (out_path, receipt)
+                if _same_binding(parsed, receipt):
+                    # Same binding, different prose. mesh/up.sh probes every runtime
+                    # through effort-receipt.js during UP and records the full
+                    # `hermes --version` banner; this module normalizes to a bare
+                    # semver and writes its own `source` narrative. Appending would
+                    # put two monitor receipts on the ledger and the gate would
+                    # refuse the run with RECEIPT_DUPLICATE.
+                    #
+                    # Only the binding is compared -- model, effort, and the three
+                    # honesty flags. A receipt that genuinely differs on any of those
+                    # still appends, because a changed binding is a fact the audit
+                    # trail must keep. This can never collapse a mocked receipt into
+                    # a live one: `mocked` is part of the comparison.
                     return (out_path, receipt)
 
     # Single os.write() of the complete line on an O_APPEND fd: safe against concurrent
