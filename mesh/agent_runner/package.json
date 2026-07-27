@@ -1,0 +1,20 @@
+{
+  "name": "@jachackssf/agent-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turns one harness CLI invocation into one schema-valid assessment.v1, DM'd to the coordinator.",
+  "bin": {
+    "agent-runner": "./bin/agent-runner.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {}
+}
