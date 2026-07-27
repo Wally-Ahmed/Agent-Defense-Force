@@ -31,10 +31,14 @@ import from contracts.audit_event_contract { ACTIONS, DENY_REASONS }
 import from app.model.graph {
     Tenant, Membership, Principal, Session, Token, Project, Task, Comment, ExportJob
 }
+# The raw traversals this module used to measure list actions with
+# (projects_of / tasks_of / comments_of) and the raw `sensitivity_of` reader are
+# deliberately NOT imported any more: measuring with them is what returned
+# unfiltered collections, and reading with it is what ignored inherited
+# sensitivity. Both now come from app/services/visibility.jac, already gated.
 import from app.model.resolve {
     tenant_by_id, principal_by_id, session_by_id, token_by_jti, membership_of,
-    resolve_in_tenant, sensitivity_of, projects_of, tasks_of, comments_of,
-    exports_of, project_in, task_in, export_in, TRAVERSED_KINDS
+    resolve_in_tenant, exports_of, project_in, task_in, export_in, TRAVERSED_KINDS
 }
 import from app.security.clock { now_ms, REAUTH_MAX_AGE_MS }
 import from app.security.ctxsig { verify_ctx }
@@ -51,6 +55,9 @@ import from app.security.audit { emit_audit }
 # restated. One definition of "confidential and canary both require admin" in
 # the codebase, read from both sides of the boundary.
 import from app.services.sensitivity { effective_required }
+import from app.services.visibility {
+    effective_sensitivity, visible_projects_in, visible_tasks_in, visible_comments_in
+}
 
 # --------------------------------------------------------------------------
 # Actions whose blast radius guard() MEASURES rather than trusts.
@@ -73,24 +80,38 @@ glob:pub COUNTED_ACTIONS: list = [
 """Assemble the tenant-scoped collection an action is allowed to return.
 
 Returns a list. `target_id` names the parent to list from where the action
-needs one (tasks of a project, comments of a task)."""
-def _measure(tenant: Tenant, action: str, target_id: str) -> list {
+needs one (tasks of a project, comments of a task).
+
+`role` IS LOAD-BEARING, and this signature is the fix for the bug that made
+this whole module worth re-reading. The per-record sensitivity floor further
+down authorize() only ever fires for a request that named a single
+`target_id`; a list request names none, so the floor was skipped and this
+function returned the tenant's ENTIRE collection -- which the served walkers in
+app/walkers/work.jac then reported verbatim, because the contract with them is
+that guard hands back exactly what it counted. Filtering has to happen HERE,
+inside the measurement, or `result_count` and the rows the caller receives are
+two different sets and the audit row is a false statement.
+
+The filters themselves live in app/services/visibility.jac and are the SAME
+functions the domain layer applies. Restating them here is what let the two
+layers disagree in the first place."""
+def _measure(tenant: Tenant, action: str, target_id: str, role: str) -> list {
     if action == "project.list" {
-        return projects_of(tenant);
+        return visible_projects_in(tenant, role);
     }
     if action == "task.list" {
         parent = project_in(tenant, target_id);
         if parent is None {
             return [];
         }
-        return tasks_of(parent);
+        return visible_tasks_in(cast(Project, parent), role);
     }
     if action == "comment.list" {
         parent = task_in(tenant, target_id);
         if parent is None {
             return [];
         }
-        return comments_of(parent);
+        return visible_comments_in(tenant, cast(Task, parent), role);
     }
     if action == "export.download" {
         job = export_in(tenant, target_id);
@@ -422,6 +443,11 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     }
 
     membership: Membership | None = None;
+    # The role the floor and the measurement below are evaluated against.
+    # `none` until a live membership says otherwise, so a path that somehow
+    # reached the measurement without establishing one measures the collection
+    # a role of `none` may see -- which is nothing above the lowest floor.
+    caller_role: str = "none";
     if action not in MEMBERSHIP_EXEMPT_ACTIONS {
         found = membership_of(tenant, actor.principal_id);
         if found is None {
@@ -432,6 +458,7 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
             return _decide(base, False, "NOT_A_MEMBER", tenant=tenant, principal=actor);
         }
         base["actor_role"] = membership.role;
+        caller_role = membership.role;
 
         # ------------------------------------------------------------------
         # STEP 5 -- role. The requirement comes from the ACTION_MIN_ROLE table
@@ -456,7 +483,16 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
             return _decide(base, False, "NOT_FOUND",
                            tenant=tenant, principal=actor, membership=membership);
         }
-        base["target_sensitivity"] = sensitivity_of(resolved);
+        # EFFECTIVE sensitivity, not the record's own field. A record is no
+        # less sensitive than the thing it lives inside, so a task inherits
+        # stricter(project, task) and a comment inherits its task's -- from
+        # app/services/visibility.jac, over the same floor table. Reading only
+        # `target.sensitivity` here let a `normal` task inside an above-floor
+        # project be read, and its comments listed, by a caller who could not
+        # open the project itself. The audit row carries the effective value for
+        # the same reason the decision uses it: that is the classification the
+        # request actually reached for.
+        base["target_sensitivity"] = effective_sensitivity(tenant, resolved);
         base["parent_id"] = getattr(resolved, "project_id", "") or getattr(resolved, "task_id", "");
 
         # ------------------------------------------------------------------
@@ -514,8 +550,14 @@ def:pub authorize(ctx: dict, action: str, target_kind: str,
     }
 
     # Measured egress, for the actions whose blast radius is a collection.
+    #
+    # The floor above gates the record a request NAMES. It cannot gate a
+    # request that names none, which is every list action -- so the collection
+    # is assembled against `caller_role` and the same floor is applied per
+    # record inside _measure(). The count recorded here is therefore the count
+    # of rows the walker will return, and `Grant.node` is that exact list.
     if action in COUNTED_ACTIONS {
-        collection = _measure(tenant, action, target_id);
+        collection = _measure(tenant, action, target_id, caller_role);
         base["result_count"] = _export_rows(collection, action);
         resolved = collection;
     }

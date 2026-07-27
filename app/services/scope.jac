@@ -35,12 +35,21 @@ import from app.model.graph {
 }
 import from app.model.resolve {
     tenant_by_id, principal_by_id, session_by_id, membership_of, memberships_of,
-    projects_of, project_in, tasks_of, comments_of, invites_of, exports_of,
+    project_in, tasks_of, comments_of, invites_of, exports_of,
     export_in, principal_of
 }
 import from app.model.graph { Hosts, HasMember, get_platform }
 import from app.security.clock { now_ms, REAUTH_MAX_AGE_MS }
-import from app.services.sensitivity { can_reach, stricter }
+import from app.services.sensitivity { can_reach }
+# The one implementation of the sensitivity floor over collections and over
+# inherited (parent) sensitivity. guard() imports these same functions, so this
+# layer's defence-in-depth pass and the authorization layer's measurement can
+# no longer drift apart -- which is exactly how the served list endpoints came
+# to return records this module had always filtered out.
+import from app.services.visibility {
+    visible_projects_in, visible_tasks_in, visible_comments_in,
+    task_sensitivity as effective_task_sensitivity
+}
 
 # --------------------------------------------------------------------------
 # Scope -- everything a walker is allowed to know about who is calling.
@@ -141,10 +150,14 @@ def:pub step_up_ok(sc: Scope) -> bool {
 # Projects
 # --------------------------------------------------------------------------
 
-"""Every project in this tenant the caller's role can reach, stable order."""
+"""Every project in this tenant the caller's role can reach, stable order.
+
+Unpacking a Scope into (tenant, role) is ALL this adds. The filter itself is
+app/services/visibility.jac's, which is also the one guard() measures with --
+the two used to be separate implementations of the same sentence and they
+diverged, so guard's collection was unfiltered while this one was not."""
 def:pub visible_projects(sc: Scope) -> list {
-    out = [p for p in projects_of(sc.tenant) if can_reach(sc.role, p.sensitivity)];
-    return sorted(out, key=lambda p: Project : (p.created_at, p.project_id));
+    return visible_projects_in(sc.tenant, sc.role);
 }
 
 """One project, by traversal from the caller's tenant.
@@ -168,18 +181,17 @@ def:pub find_project(sc: Scope, project_id: str) -> (Project | None) {
 # Tasks
 # --------------------------------------------------------------------------
 
-"""A task's effective sensitivity: the stricter of its project's and its own."""
+"""A task's effective sensitivity: the stricter of its project's and its own.
+
+Re-exported from app/services/visibility.jac so the existing call sites in
+app/services/ keep their spelling while there is only one definition."""
 def:pub task_sensitivity(project: Project, task: Task) -> str {
-    return stricter(project.sensitivity, task.sensitivity);
+    return effective_task_sensitivity(project, task);
 }
 
 """Every task in this project the caller can reach, stable order."""
 def:pub visible_tasks(sc: Scope, project: Project) -> list {
-    out = [
-        t for t in tasks_of(project)
-        if can_reach(sc.role, task_sensitivity(project, t))
-    ];
-    return sorted(out, key=lambda t: Task : (t.created_at, t.task_id));
+    return visible_tasks_in(project, sc.role);
 }
 
 """One task, by traversal from an already-resolved project."""
@@ -202,9 +214,12 @@ def:pub find_task(sc: Scope, project: Project, task_id: str) -> (Task | None) {
 """Every comment on this task, stable order.
 
 A comment carries no sensitivity of its own; it inherits its task's effective
-value, which the caller already had to clear to reach the task at all."""
+value. That inheritance is now re-checked rather than assumed from the fact
+that the caller reached the task -- the served `comment.list` walker addresses
+a task by id alone, so "the caller already cleared the parent" was true of this
+layer and false of the endpoint."""
 def:pub visible_comments(sc: Scope, task: Task) -> list {
-    return sorted(comments_of(task), key=lambda c: Comment : (c.created_at, c.comment_id));
+    return visible_comments_in(sc.tenant, task, sc.role);
 }
 
 """One comment, by traversal from an already-resolved task."""

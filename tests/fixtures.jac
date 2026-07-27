@@ -146,8 +146,21 @@ def build() -> None {
         projects[str(spec[1])] = proj;
     }
 
+    # A task's effective sensitivity is stricter(project, task), so BOTH
+    # directions of inheritance have to exist in the fixture or a filter that
+    # only looks at one of them passes vacuously:
+    #
+    #   tk_conf   -- a CONFIDENTIAL child under a NORMAL parent. The parent is
+    #                reachable by a member, so nothing above the task itself
+    #                keeps it out of `task.list`. This is the row that fails if
+    #                a list operation skips the per-record floor.
+    #   tk_canary -- a NORMAL child under the CANARY parent. Its own field says
+    #                `normal`, so a floor that reads only the record's own
+    #                sensitivity waves it through -- while the project it lives
+    #                in is the one record the whole demo exists to protect.
     tspecs = [
         ("pr_normal", "tk_normal", "Ship the beta", "normal"),
+        ("pr_normal", "tk_conf", "Severance terms", "confidential"),
         ("pr_canary", "tk_canary", "Compensation bands", "normal"),
         ("pr_globex", "tk_globex", "Globex launch", "normal")
     ];
@@ -167,8 +180,14 @@ def build() -> None {
         tasks[str(tspec[1])] = tk;
     }
 
+    # A Comment carries no sensitivity of its own -- it inherits its task's
+    # effective value. `cm_conf` and `cm_canary` hang off the two inheriting
+    # tasks above so `comment.list` has something to leak if the parent's
+    # effective sensitivity is not the thing being gated on.
     cspecs = [
         ("tk_normal", "cm_normal", "Looks good to me.", "u_member", "pr_normal"),
+        ("tk_conf", "cm_conf", "Numbers attached.", "u_owner", "pr_normal"),
+        ("tk_canary", "cm_canary", "Band ranges below.", "u_owner", "pr_canary"),
         ("tk_globex", "cm_globex", "Globex internal note.", "u_globex", "pr_globex")
     ];
     for cspec in cspecs {
@@ -196,9 +215,12 @@ def:pub snapshot() -> dict {
         "canary_project": "pr_canary",
         "globex_project": "pr_globex",
         "normal_task": "tk_normal",
+        "conf_task": "tk_conf",
         "canary_task": "tk_canary",
         "globex_task": "tk_globex",
         "normal_comment": "cm_normal",
+        "conf_comment": "cm_conf",
+        "canary_comment": "cm_canary",
         "globex_comment": "cm_globex"
     };
 }
