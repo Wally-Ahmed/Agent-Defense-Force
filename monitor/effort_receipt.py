@@ -198,7 +198,13 @@ def _scan_hermes_config():
         value = value.strip().strip("\"'")
         if section == "agent" and key == "reasoning_effort" and value:
             effort = value
-        elif section == "model" and key in ("name", "id") and value:
+        elif section == "model" and key in ("default", "name", "id") and value:
+            # `default` is the key hermes 0.16 actually writes under `model:`
+            # (alongside `provider` and `base_url`). Omitting it made this scan
+            # return None, which the receipt then recorded as model "unknown"
+            # with downgraded=true -- a false reading that would block the
+            # coordinator's effort gate on a configuration that is in fact
+            # correct. `name`/`id` are kept as tolerated aliases.
             model = value
     return (model, effort, cfg_path)
 
