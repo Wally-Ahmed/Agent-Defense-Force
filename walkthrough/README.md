@@ -1,8 +1,9 @@
 # Narrated walkthrough — build, run, and the audio swap
 
 Phase 5 work, pulled early to de-risk it. This directory is the **frame**: a working scene engine,
-a full narration script, and a shot list. The demo system it presents is still being built, so the
-page ships with no narration audio and no captured visuals, and says so on its face.
+a full narration script, and a shot list. **Narration audio is in** — all seventeen scenes are
+voiced. The demo system it presents is still being built, so the page ships with no captured
+visuals, and says so on its face.
 
 ```
 walkthrough/
@@ -11,7 +12,9 @@ walkthrough/
   visuals.md      the shot list: what 1800×600 frame each scene needs
   README.md       this file
   img/            scene visuals go here (empty today)
-  scene<n>.mp3    narration goes here (none today)
+  scene<n>.mp3    narration — all 17 present, 706 s total (≈11 m 46 s)
+  scene<n>.txt    the exact text each clip was voiced from, cut from script.md
+  stt/scene<n>.json  the STT round-trip, word-level timestamps — the beat source
 ```
 
 ## Run it
@@ -44,8 +47,9 @@ choreography beats and the scene-advance countdown all resume with the time they
 
 ## The audio swap — what "no re-authoring" means
 
-Today `scene<n>.mp3` does not exist, so every request 404s. `playScene()` handles that as a normal
-condition:
+All seventeen `scene<n>.mp3` now exist, so `ended` drives every scene and `dur` is a fallback only.
+The swap needed **no engine change** — `playScene()` already handled both cases, and a clip that
+goes missing still degrades to the silent path:
 
 ```js
 function playScene(n, durationMs){
@@ -97,6 +101,15 @@ curl -s -X POST "https://api.elevenlabs.io/v1/speech-to-text" \
 
 Compare line by line against `script.md`. Re-record anything that drifted.
 
+**Done for all 17** (transcripts in `stt/`). No clip truncated or dropped a clause. Scene 11 was
+re-recorded once ("each **shifts** with" → "each ships with"). The residual diffs are all STT
+*spelling*, not TTS error, and are expected — do not chase them into a re-record:
+spoken numbers written back as digits ("sixteenth twenty twenty-six" → "16th 2026" — the
+numbers-as-words rule working), homophones (`Jac`→"jack", `principal`→"principle"), and
+out-of-vocabulary proper nouns (`Cotal`→"Katal"/"CODEL", sentence-final `Jac.`→"Jackal").
+That last one was checked acoustically, not assumed: the token is 380 ms, inside the 221–400 ms
+range of the `Jac`→"jack" tokens that transcribed correctly, so it is one syllable, not two.
+
 **3 · Update `dur` to the measured duration.**
 
 ```bash
@@ -107,6 +120,9 @@ Round up ~300 ms and set that scene's `dur` in `TOUR`. Strictly this is optional
 present, `ended` wins — but keeping `dur` honest means the tour still runs correctly at the right
 pace if an mp3 ever fails to load, and it keeps the runtime estimate in `script.md` true. Update the
 duration table in `script.md` in the same edit.
+
+**Done:** every `dur` in `TOUR` is now measured, not estimated. The recorded tour is 706.3 s
+(≈11 m 46 s) against the 765.2 s estimate — the real voice runs a little faster than 2.55 words/s.
 
 **4 · Re-derive the choreography beats. This is not optional.** Every `choreo()` beat in `index.html`
 is currently a fraction of `dur`, guessed with no audio to time against. **Beats are wrong until

@@ -418,14 +418,14 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
 
 <!-- ==========================================================================
      PLACEHOLDER BANNER — this build is the walkthrough FRAME (Phase 5, pulled
-     early). Narration audio and captured scene visuals do not exist yet.
+     early). Narration audio is IN; captured scene visuals do not exist yet.
      Remove only when both exist. Swap procedure: walkthrough/README.md.
      ========================================================================== -->
 <div class="phbanner" id="phbanner">
   <b>PLACEHOLDER BUILD — walkthrough frame only.</b>
-  <b>No narration audio yet</b> (no ElevenLabs key): each scene advances on its declared
-  <code>dur</code> in the <code>TOUR</code> array instead of an mp3's <code>ended</code> event. Dropping
-  <code>walkthrough/scene&lt;n&gt;.mp3</code> in hands timing back to the audio automatically — no code change.
+  <b>Narration audio is in</b>: all seventeen scenes are voiced, so each scene advances on its mp3's
+  <code>ended</code> event. The declared <code>dur</code> in the <code>TOUR</code> array is now the measured
+  clip length and is consulted only if a clip fails to load — the tour still runs silently on captions if it does.
   <b>No scene visuals yet</b>: the media strip shows a labelled placeholder card naming the shot each scene needs
   (<code>walkthrough/visuals.md</code>). Every log line, verdict, confidence, timing and graph drawn below is
   <span class="ph">ILLUSTRATIVE</span> stage dressing, not a measurement — the system it presents is still being built.
@@ -1074,7 +1074,7 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
           <li>The incident-graph drawing — replaced by a capture of the live incident record.</li>
           <li>The gateway and domain walkers, the Hermes detector, the coordinator vote logic, the containment executor, the responder harness wiring and the attack driver.</li>
           <li>The per-responder weights and the score formula.</li>
-          <li>All scene visuals (<code>img/scene&lt;n&gt;.png|.mp4</code>) and all narration audio (<code>scene&lt;n&gt;.mp3</code>).</li>
+          <li>All scene visuals (<code>img/scene&lt;n&gt;.png|.mp4</code>). Narration audio (<code>scene&lt;n&gt;.mp3</code>) is done — all seventeen scenes are voiced.</li>
         </ul>
       </div>
     </div>
@@ -1305,35 +1305,35 @@ function playScene(n, durationMs){
           until img/scene<n>.png|.mp4 exists (see visuals.md).
    --------------------------------------------------------------------- */
 const TOUR = [
-  {n:1,  dur:49500, cap:"Hugging Face, July twenty twenty-six — **the second phase is the new problem**",
+  {n:1,  dur:46400, cap:"Hugging Face, July twenty twenty-six — **the second phase is the new problem**",
    shot:"The two-phase chain: vulnerability in, then credentials harvested and lateral movement over a weekend",
    foc:"#origin", fb:"start", run(){ showTab("threat"); }},
 
-  {n:2,  dur:49800, cap:"One request at a time, there is **nothing to reject**",
+  {n:2,  dur:43100, cap:"One request at a time, there is **nothing to reject**",
    shot:"Split panel — five refusable request classes against five that look identical and are legitimate",
    foc:"#gap", fb:"start", run(){ showTab("threat");
      choreo("#gap",".cmpcol li",[{t:3000,i:[0,1,2,3,4]},{t:20500,i:[5,6,7,8,9]},{t:41000,i:"*"}],48000); }},
 
-  {n:3,  dur:45500, cap:"**817 community security skills** — vendored, pinned, credited",
+  {n:3,  dur:42800, cap:"**817 community security skills** — vendored, pinned, credited",
    shot:"Skills library card with the community-maintained disclaimer set large, plus the pinned commit",
    foc:"#skills", fb:"start", run(){ showTab("threat"); }},
 
-  {n:4,  dur:47500, cap:"**Cotal** — independence enforced by the transport",
+  {n:4,  dur:43500, cap:"**Cotal** — independence enforced by the transport",
    shot:"One channel out to five isolated responders, five direct messages back, no path between them",
    foc:"#cotal", fb:"start", run(){ showTab("threat");
      choreo("#cotalprims",".step",[{t:20000,i:0},{t:24000,i:1},{t:27500,i:2},{t:31000,i:"*"}],45500); }},
 
-  {n:5,  dur:40000, cap:"The thesis, **stated exactly**",
+  {n:5,  dur:39700, cap:"The thesis, **stated exactly**",
    shot:"The thesis sentence, with its four commitments pulled out beneath it",
    foc:"#thesis", fb:"start", run(){ showTab("threat");
      choreo("#thesisflow",".step",[{t:22000,i:0},{t:26000,i:1},{t:30000,i:2},{t:33500,i:3},{t:36500,i:"*"}],39000); }},
 
-  {n:6,  dur:45500, cap:"**Northwind Projects** — not deliberately vulnerable",
+  {n:6,  dur:49200, cap:"**Northwind Projects** — not deliberately vulnerable",
    shot:"The eight shipped controls ringing the app, all green, with the domain model beneath",
    foc:"#appcard", fb:"start", run(){ showTab("system");
      choreo("#appctl",".step",[{t:22000,i:[0,1]},{t:25000,i:2},{t:27500,i:3},{t:29500,i:4},{t:31000,i:[5,6]},{t:33000,i:7},{t:35000,i:"*"}],43500); }},
 
-  {n:7,  dur:46000, cap:"**Detection, judgment and enforcement** are three separate things",
+  {n:7,  dur:44100, cap:"**Detection, judgment and enforcement** are three separate things",
    shot:"The full architecture animating stage by stage, top to bottom",
    foc:"#arch", fb:"start", run(){ showTab("system"); spotlight([]);
      tlater(()=>spotlight(["n-app"]),1800);
@@ -1346,51 +1346,51 @@ const TOUR = [
      tlater(()=>spotlight(["n-policy","n-audit"]),38000);
      tlater(()=>spotlight([]),44500); }},
 
-  {n:8,  dur:47000, cap:"**Hermes** watches shape, never content",
+  {n:8,  dur:45400, cap:"**Hermes** watches shape, never content",
    shot:"A rolling ninety-second window with the feature vector redrawing, none of it a violation",
    foc:"#hermes", fb:"start", run(){ showTab("system");
      choreo("#feats",".step",[{t:18000,i:0},{t:20500,i:1},{t:23000,i:2},{t:26500,i:3},{t:29500,i:4},{t:31500,i:5},{t:33000,i:6},{t:35500,i:7},{t:37500,i:"*"}],45000); }},
 
-  {n:9,  dur:43200, cap:"**Five models, five harnesses**, one incident",
+  {n:9,  dur:45800, cap:"**Five models, five harnesses**, one incident",
    shot:"Five responder cards, each a different lineage, receiving the identical incident record",
    foc:"#responders", fb:"start", run(){ showTab("system");
      choreo("#responders",".rcard",[{t:3000,i:0},{t:5500,i:1},{t:8000,i:2},{t:10500,i:3},{t:13000,i:4},{t:16000,i:"*"}],41000); }},
 
-  {n:10, dur:49800, cap:"Then we **stop using models** — a rule, not a judge",
+  {n:10, dur:40500, cap:"Then we **stop using models** — a rule, not a judge",
    shot:"Five confidences resolving into one arithmetic score against the frozen contain rule",
    foc:"#quorum", fb:"start", run(){ showTab("system");
      choreo("#qtable",".qrow:not(.qhead)",[{t:14000,i:0},{t:15500,i:1},{t:17000,i:2},{t:18500,i:3},{t:20000,i:4},{t:22000,i:"*"}],47500); }},
 
-  {n:11, dur:46000, cap:"Containment is **data before it is action**",
+  {n:11, dur:43100, cap:"Containment is **data before it is action**",
    shot:"The ten containment kinds with their TTLs, the two chosen lit, whole-tenant struck out",
    foc:"#policy", fb:"start", run(){ showTab("system");
      choreo("#kinds",".kind",[{t:14000,i:[0,1]},{t:18000,i:2},{t:20500,i:3},{t:23000,i:[4,5]},{t:26000,i:6},{t:28000,i:7},{t:30000,i:9},{t:33000,i:"*"}],44000); }},
 
-  {n:12, dur:43200, cap:"Beat one — the **boring half**: invalid requests, correctly refused",
+  {n:12, dur:39000, cap:"Beat one — the **boring half**: invalid requests, correctly refused",
    shot:"Six refused requests, each annotated with the decision-order step that caught it",
    foc:"#beat-valid", fb:"start", run(){ showTab("demo"); beatAt(0); }},
 
-  {n:13, dur:42000, cap:"Beat two — a **valid credential**, and not one refusable request",
+  {n:13, dur:40300, cap:"Beat two — a **valid credential**, and not one refusable request",
    shot:"The campaign log, every line 200 OK, with the fan-out count climbing in the corner",
    foc:"#beat-campaign", fb:"start", run(){ showTab("demo"); beatAt(1); }},
 
-  {n:14, dur:44300, cap:"Beat three — one **incident record**, joined and evidenced",
+  {n:14, dur:39900, cap:"Beat three — one **incident record**, joined and evidenced",
    shot:"The live incident record: narrow normal cluster beside the wide campaign fan, with join keys and families",
    foc:"#graphpanel", fb:"start", run(){ showTab("demo"); beatAt(2);
      choreo("#families",".step",[{t:26000,i:0},{t:27500,i:1},{t:29000,i:2},{t:30500,i:3},{t:32000,i:4},{t:33000,i:5},{t:34000,i:6},{t:35500,i:7},{t:37000,i:"*"}],42500); }},
 
-  {n:15, dur:40800, cap:"Beats four and five — **one incident out, five assessments back**",
+  {n:15, dur:33200, cap:"Beats four and five — **one incident out, five assessments back**",
    shot:"Hermes publishing once, then five isolated responder lanes returning by direct message",
    foc:"#escalate", fb:"start", run(){ showTab("demo"); beatAt(3);
      tlater(()=>beatAt(4), 11000);
      choreo("#lanes",".step",[{t:1500,i:0},{t:8000,i:1},{t:13500,i:2},{t:18000,i:3},{t:32000,i:"*"}],39000); }},
 
-  {n:16, dur:40800, cap:"Beats six and seven — **scoped containment, business continues**",
+  {n:16, dur:37100, cap:"Beats six and seven — **scoped containment, business continues**",
    shot:"Two lanes side by side: the contained session stopped, real users still at 200 OK",
    foc:"#contain", fb:"start", run(){ showTab("demo"); beatAt(6);
      choreo("#contain",".cmpcol",[{t:4000,i:0},{t:24000,i:1},{t:34000,i:"*"}],39000); }},
 
-  {n:17, dur:44300, cap:"Beat eight — **auditable, and reversed in one recorded operation**",
+  {n:17, dur:39100, cap:"Beat eight — **auditable, and reversed in one recorded operation**",
    shot:"The audit ledger filling row by row, ending on the rollback record",
    foc:"#ledger", fb:"start", run(){ showTab("demo"); beatAt(7);
      choreo("#ledgertbl",".lgr:not(.lhead)",[{t:6000,i:0},{t:8500,i:1},{t:11000,i:2},{t:13500,i:3},{t:16000,i:4},{t:21000,i:5},{t:26000,i:"*"}],42500); }}
@@ -1580,6 +1580,6 @@ function stopTour(){                                   /* undo EVERYTHING run() 
 tourbtn.addEventListener("click", tour);
 </script>
 <!-- build stamp: a stage script replaces the token; a stale cached copy shows an older stamp -->
-<div id="buildtag" style="position:fixed;left:10px;bottom:6px;z-index:5;font:10px ui-monospace,monospace;color:#6b554455;pointer-events:none">build dev · frame-only · no audio · no captures</div>
+<div id="buildtag" style="position:fixed;left:10px;bottom:6px;z-index:5;font:10px ui-monospace,monospace;color:#6b554455;pointer-events:none">build dev · frame-only · audio 17/17 · no captures</div>
 </body>
 </html>

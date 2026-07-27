@@ -1,6 +1,6 @@
 # Narration script — Northwind Projects walkthrough
 
-**17 scenes · 765,200 ms declared · ≈12 min 45 s narrated.**
+**17 scenes · 712,200 ms declared · 706.3 s of recorded narration ≈ 11 min 46 s.**
 
 Scene IDs (`n`) are **stable**. `n` ties `TOUR[i].n` → `walkthrough/scene<n>.mp3` →
 `walkthrough/img/scene<n>.{mp4,png}`. Play order is array order in `index.html`. **Never renumber an
@@ -386,28 +386,28 @@ return.
 
 | # | id | words | `dur` (ms) | ≈ s |
 |---|----|-------|-----------|-----|
-| 1 | 1 | 123 | 49500 | 49.5 |
-| 2 | 2 | 124 | 49800 | 49.8 |
-| 3 | 3 | 113 | 45500 | 45.5 |
-| 4 | 4 | 118 | 47500 | 47.5 |
-| 5 | 5 | 99 | 40000 | 40.0 |
-| 6 | 6 | 113 | 45500 | 45.5 |
-| 7 | 7 | 114 | 46000 | 46.0 |
-| 8 | 8 | 117 | 47000 | 47.0 |
-| 9 | 9 | 107 | 43200 | 43.2 |
-| 10 | 10 | 124 | 49800 | 49.8 |
-| 11 | 11 | 114 | 46000 | 46.0 |
-| 12 | 12 | 107 | 43200 | 43.2 |
-| 13 | 13 | 104 | 42000 | 42.0 |
-| 14 | 14 | 110 | 44300 | 44.3 |
-| 15 | 15 | 101 | 40800 | 40.8 |
-| 16 | 16 | 101 | 40800 | 40.8 |
-| 17 | 17 | 110 | 44300 | 44.3 |
-| | | **1799** | **765200** | **765.2 s ≈ 12 m 45 s** |
+| 1 | 1 | 123 | 46400 | 46.1 |
+| 2 | 2 | 124 | 43100 | 42.7 |
+| 3 | 3 | 113 | 42800 | 42.5 |
+| 4 | 4 | 118 | 43500 | 43.2 |
+| 5 | 5 | 99 | 39700 | 39.3 |
+| 6 | 6 | 113 | 49200 | 48.9 |
+| 7 | 7 | 114 | 44100 | 43.7 |
+| 8 | 8 | 117 | 45400 | 45.0 |
+| 9 | 9 | 107 | 45800 | 45.5 |
+| 10 | 10 | 124 | 40500 | 40.2 |
+| 11 | 11 | 114 | 43100 | 42.7 |
+| 12 | 12 | 107 | 39000 | 38.6 |
+| 13 | 13 | 104 | 40300 | 39.9 |
+| 14 | 14 | 110 | 39900 | 39.6 |
+| 15 | 15 | 101 | 33200 | 32.8 |
+| 16 | 16 | 101 | 37100 | 36.8 |
+| 17 | 17 | 110 | 39100 | 38.7 |
+| | | **1799** | **712200** | **706.3 s measured ≈ 11 m 46 s** |
 
-Estimate basis: ~2.55 spoken words/second plus ~1.2 s of tail. Every scene is under the 60 s rule.
-When the real mp3s exist, replace each `dur` with the measured `ffprobe` duration rounded up by
-~300 ms — see `README.md`.
+`dur` values are now MEASURED, not estimated: each is the recorded clip's `ffprobe` duration
+rounded up by ~300 ms (the ≈ s column is the raw measurement). Every scene is under the 60 s
+rule. With the mp3s present `dur` is only consulted if a clip fails to load — see `README.md`.
 
 ---
 
