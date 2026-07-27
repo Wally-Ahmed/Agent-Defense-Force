@@ -4,8 +4,12 @@
 # the REAL coordinator FSM and the REAL containment executor against artifacts
 # that already exist on disk.
 #
-#   cd <scratch> && PYTHONPATH=<repo> jac run <repo>/mesh/complete_run.jac
+#   cd <scratch> && PYTHONPATH=<repo> jac run <repo>/mesh/complete_run.jac \
+#       [--run-id <id>] [--incident-id <id>]
 #   (mesh/complete_run.sh does exactly that, with the isolation env set)
+#
+#   --run-id selects which runs/<id>/ tree is read and written; it defaults to
+#   "six-live", so a bare invocation is unchanged.
 #
 # WHAT IS REAL
 #   - the five assessments: read off disk, produced by five real models in a run
@@ -13,7 +17,7 @@
 #     reach the FSM through mesh/bridge/mesh_responder.jac (kind "cotal"), which
 #     re-validates each one against the frozen assessment.v1 schema before it is
 #     allowed to count as a vote.
-#   - the effort gate: run against runs/six-live/effort.jsonl, the real receipts.
+#   - the effort gate: run against runs/<run-id>/effort.jsonl, the real receipts.
 #   - the quorum: coordinator/quorum.jac, untouched.
 #   - containment: containment/executor.jac via mesh/live_containment.jac.
 #
@@ -23,17 +27,27 @@
 #   replay of a live deliberation, not a new one.
 #
 # ON THE INCIDENT ID  (read this before changing it)
-#   The five assessments all answer incident_id "inc-2026-07-26-live01" — the
-#   incident in mesh/fixtures/incident-live.json that the harnesses were actually
-#   given. runs/six-live/incidents.jsonl holds three DIFFERENT incidents, emitted
-#   by the monitor from the attack traffic (inc_ebdc9299dcbf72b9 and two others),
-#   against tenant t_acme.
+#   A set of assessments answers exactly ONE incident, and WHICH one is read back
+#   off the assessment files themselves — assessments_incident_id() — never
+#   assumed. The two shapes both occur:
+#     - runs/six-live: the five assessments answer "inc-2026-07-26-live01", the
+#       incident in mesh/fixtures/incident-live.json the harnesses were given.
+#       runs/six-live/incidents.jsonl holds three DIFFERENT monitor incidents
+#       (inc_ebdc9299dcbf72b9 and two others) against tenant t_acme.
+#     - runs/six-live-e2e: the five responders were called live against a REAL
+#       monitor-detected incident read out of runs/<run>/incidents.jsonl, so the
+#       assessments answer THAT id and the fixture is never opened at all.
 #
-#   Escalating a monitor incident to these handles is not a shortcut that happens
-#   to work — mesh_responder.poll() rejects every assessment with
+#   The guard therefore keys off what the assessments actually answer, not off
+#   the fixture: when the escalated incident_id differs from the answered one,
+#   this driver writes ONLY incident_mismatch_probe.json and leaves decision.json
+#   and containment.json untouched.
+#
+#   Escalating some other incident to these handles is not a shortcut that
+#   happens to work — mesh_responder.poll() rejects every assessment with
 #   R_INCIDENT_MISMATCH, because attaching one incident's verdicts to another
-#   incident's decision is exactly the bug that guard exists to prevent. Pass
-#   --incident-id to see it happen; it is reported, not worked around.
+#   incident's decision is exactly the bug that guard exists to prevent. Pass a
+#   mismatched --incident-id to see it happen; it is reported, not worked around.
 
 import os;
 import sys;
@@ -65,6 +79,9 @@ import from ids { RESPONDER_IDS }
 import from fsm { Incident, build_fsm, run_incident }
 import from schema_check { validate_payload, is_valid }
 import from containment.executor { control_surface, controls_path }
+import from containment.policy { tenant_actives }
+import from containment.probes { principal_can_list_projects }
+import from app.security.clock { now_ms }
 
 glob RUN_ID: str = "six-live";
 glob RUN_DIR: str = os.path.join(REPO_ROOT, "runs", RUN_ID);
@@ -108,6 +125,42 @@ def load_monitor_incident(incident_id: str) -> dict {
 }
 
 
+"""The incident_id the assessments on disk ACTUALLY answer.
+
+Reads it out of the files rather than assuming it, because the answered incident
+is a property of the run: a fixture-driven run answers the fixture, and a
+monitor-driven run answers whatever the monitor emitted. Returns "" when the
+directory holds no assessments, or when the files disagree — a split set is
+itself a defect and must not be averaged into a single confident answer."""
+def assessments_incident_id() -> str {
+    if not os.path.isdir(ASSESS_DIR) {
+        return "";
+    }
+    ids: list = [];
+    for f in sorted(os.listdir(ASSESS_DIR)) {
+        if not f.endswith(".json") {
+            continue;
+        }
+        with open(os.path.join(ASSESS_DIR, f), "r") as fh {
+            rec = json.load(fh);
+        }
+        got: str = str(rec.get("incident_id", ""));
+        if got not in ids {
+            ids.append(got);
+        }
+    }
+    if len(ids) == 1 {
+        return ids[0];
+    }
+    if len(ids) > 1 {
+        print("  WARNING: the assessment files DISAGREE on incident_id: "
+              + str(sorted(ids))
+              + " -- refusing to name a single answered incident.");
+    }
+    return "";
+}
+
+
 """Five cotal responders, each reading its own already-written assessment file.
 
 spawn=False: nothing is launched, no model is called, no token is spent. The
@@ -144,31 +197,64 @@ def write_json(path: str, payload: Any) {
 with entry:__main__ {
     argv: list = sys.argv[1:];
     incident_id: str = "";
+    run_id: str = RUN_ID;
     n: int = 0;
     while n < len(argv) {
         if argv[n] == "--incident-id" and (n + 1) < len(argv) {
             incident_id = argv[n + 1];
             n = n + 1;
+        } elif argv[n] == "--run-id" and (n + 1) < len(argv) {
+            run_id = argv[n + 1];
+            n = n + 1;
         }
         n = n + 1;
     }
 
+    # Every run-scoped path is re-derived from the chosen run id, and RUN_ID
+    # itself is rebound HERE — before live_mesh_config() reads it into each
+    # ResponderConfig and before it lands in containment.json as "run_id". A run
+    # must never be able to name a run it did not come from.
+    RUN_ID = run_id;
+    RUN_DIR = os.path.join(REPO_ROOT, "runs", RUN_ID);
+    ASSESS_DIR = os.path.join(RUN_DIR, "assessments");
+    RECEIPTS = os.path.join(RUN_DIR, "effort.jsonl");
+    INCIDENTS_JSONL = os.path.join(RUN_DIR, "incidents.jsonl");
+
     # ------------------------------------------------------------------
     # The incident
     # ------------------------------------------------------------------
-    fixture = load_fixture_incident();
-    fixture_id: str = str(fixture.get("incident_id", ""));
-    if incident_id == "" or incident_id == fixture_id {
-        incident_id = fixture_id;
-        payload = fixture;
-        source: str = "mesh/fixtures/incident-live.json (the incident the five harnesses answered)";
+    # The fixture is OPTIONAL. With no --incident-id this is the fixture-driven
+    # run and the fixture is the incident. With --incident-id the monitor stream
+    # is the first authority, and when the id is found there the fixture file is
+    # never opened — a monitor-driven run must not have the fixture anywhere in
+    # its provenance.
+    payload: dict = {};
+    source: str = "";
+    fixture_source: str = "mesh/fixtures/incident-live.json (the incident the five harnesses answered)";
+    if incident_id == "" {
+        payload = load_fixture_incident();
+        incident_id = str(payload.get("incident_id", ""));
+        source = fixture_source;
     } else {
-        payload = load_monitor_incident(incident_id);
-        source = "runs/" + RUN_ID + "/incidents.jsonl (monitor-derived)";
+        try {
+            payload = load_monitor_incident(incident_id);
+            source = "runs/" + RUN_ID + "/incidents.jsonl (monitor-derived)";
+        } except (ValueError, OSError) as e {
+            # Not in the monitor stream. Fall back to the fixture ONLY when the
+            # request names the fixture's own incident; otherwise the original
+            # "no such incident" is the honest answer and it propagates.
+            fixture = load_fixture_incident();
+            if str(fixture.get("incident_id", "")) != incident_id {
+                raise;
+            }
+            payload = fixture;
+            source = fixture_source;
+        }
     }
     join_keys: dict = payload.get("join_keys", {});
 
     hr("INPUTS");
+    print("  run_id           : " + RUN_ID);
     print("  incident_id      : " + incident_id);
     print("  incident source  : " + source);
     print("  assessments dir  : " + ASSESS_DIR);
@@ -177,6 +263,11 @@ with entry:__main__ {
     print("  assessment files : " + str(sorted([
         f for f in os.listdir(ASSESS_DIR) if f.endswith(".json")
     ])));
+    # What the recorded assessments answer, read from the files themselves. This
+    # -- not the fixture -- is what the escalated incident has to match.
+    answered_id: str = assessments_incident_id();
+    print("  assessments answer incident_id: "
+          + (answered_id if answered_id != "" else "(none -- empty or split)"));
 
     # ------------------------------------------------------------------
     # The world the containment executor will act on
@@ -256,7 +347,7 @@ with entry:__main__ {
         } except Exception as e {
             decision_err = str(e);
         }
-        if incident_id == fixture_id {
+        if incident_id == answered_id {
             write_json(os.path.join(RUN_DIR, "decision.json"), fsm.decision);
         }
     }
@@ -277,6 +368,57 @@ with entry:__main__ {
     surface_contained: list = control_surface();
     print("  control surface rows while CONTAINED: " + str(len(surface_contained)));
     print("  state after run_incident: " + str(fsm.state));
+
+    # ------------------------------------------------------------------
+    # THE AVAILABILITY PROOF, counted rather than sampled.
+    #
+    # run_health's `legit_user_can_list_projects` asks ONE witness, which is the
+    # right cost for a health check and too weak to put in an artifact. This
+    # asks EVERY member of the tenant, one at a time, through the same signed
+    # ctx and the same guard(), while the containment is still standing. The
+    # claim being evidenced is narrowness: the compromised identity is stopped
+    # and nobody else is.
+    # ------------------------------------------------------------------
+    subject_pid: str = str(world["subject_principal"]);
+    tenant_of_run: str = str(world["tenant"]);
+    avail_ok: list = [];
+    avail_denied: list = [];
+    for m_pid in tenant_actives(tenant_of_run) {
+        pid_s: str = str(m_pid);
+        if pid_s == subject_pid {
+            continue;
+        }
+        v_a: dict = principal_can_list_projects(pid_s, tenant_of_run, now_ms());
+        if bool(v_a["ok"]) {
+            avail_ok.append(pid_s);
+        } else {
+            avail_denied.append(pid_s + " (" + str(v_a["reason"]) + ")");
+        }
+    }
+    subject_v: dict = principal_can_list_projects(subject_pid, tenant_of_run, now_ms());
+    availability: dict = {
+        "tenant": tenant_of_run,
+        "tenant_actives": len(avail_ok) + len(avail_denied) + 1,
+        "bystanders_tested": len(avail_ok) + len(avail_denied),
+        "bystanders_serving": len(avail_ok),
+        "bystanders_denied": len(avail_denied),
+        "denied_detail": avail_denied,
+        "contained_subject": subject_pid,
+        "contained_subject_serving": bool(subject_v["ok"]),
+        "contained_subject_reason": str(subject_v["reason"]),
+        "ok": len(avail_denied) == 0 and not bool(subject_v["ok"])
+    };
+    print("");
+    print("  AVAILABILITY while CONTAINED (every member asked, not sampled):");
+    print("    tenant                  : " + tenant_of_run);
+    print("    bystanders serving      : " + str(len(avail_ok)) + " / "
+          + str(len(avail_ok) + len(avail_denied)));
+    print("    bystanders denied       : " + str(len(avail_denied))
+          + ("" if len(avail_denied) == 0 else " -> " + json.dumps(avail_denied)));
+    print("    contained subject       : " + subject_pid + " -> "
+          + ("STILL SERVING (containment failed)" if subject_v["ok"]
+             else "DENY " + str(subject_v["reason"])));
+    print("    availability proof holds: " + str(availability["ok"]));
 
     # THE ROLLBACK. CONTAINED is a holding state; tick_expire advances the clock
     # to the minimum applied ttl and reverses every applied action through the
@@ -320,18 +462,21 @@ with entry:__main__ {
     for t in executor.trace {
         if t.get("phase", "") == "apply" and t.get("health_status", "") == "fail" {
             findings.append({
-                "finding": "health_probe_exact_reason_is_order_dependent",
+                "finding": "health_probe_failed",
                 "kind": t.get("kind", ""),
                 "action_id": t.get("action_id", ""),
                 "failed_probes": t.get("health_failed", []),
                 "probe_report": t.get("health_report", []),
-                "note": "containment/probes.jac::probe_contained_subject_is_blocked "
-                        + "asserts the EXACT deny reason for this kind. The subject was "
-                        + "denied -- but by an EARLIER action in the same action_set, "
-                        + "which short-circuits the guard before this kind's own reason "
-                        + "can be observed. The action self-aborted and the executor "
-                        + "auto-rolled it back, even though the subject is contained. "
-                        + "Security outcome is safe; the verification is order-dependent."
+                "note": "The action self-aborted and the executor auto-rolled it back. "
+                        + "Read `probe_report`: it names the probe and the exact verdict. "
+                        + "Order-dependence used to land here -- an earlier action in the "
+                        + "same action_set denied the subject first and short-circuited "
+                        + "guard() before this kind's own reason could be observed. That "
+                        + "is now handled inside containment/probes.jac, which accepts a "
+                        + "strictly-earlier-stage denial ONLY when a live containment "
+                        + "control accounts for it AND this action's own control is live "
+                        + "under guard()'s own key. Anything reaching this list now is a "
+                        + "real verification failure, not a masking artefact."
             });
         }
     }
@@ -345,6 +490,8 @@ with entry:__main__ {
         "executor": "containment/executor.jac (real; no mock in this path)",
         "adapter": "mesh/live_containment.jac",
         "world": world,
+        # Counted while the containment was standing, one member at a time.
+        "availability_while_contained": availability,
         # `action_set` on the CONTAINMENT artifact means "what actually took
         # effect", not "what was decided". mesh/report reads this key to render
         # its "Actions applied" table, and listing the decided set there would
@@ -376,11 +523,11 @@ with entry:__main__ {
         "trace": executor.trace,
         "controls_path": controls_path()
     };
-    if incident_id != fixture_id {
+    if incident_id != answered_id {
         # A negative control must never overwrite the acceptance artifacts.
         write_json(os.path.join(RUN_DIR, "incident_mismatch_probe.json"), {
             "escalated_incident_id": incident_id,
-            "assessments_answer_incident_id": fixture_id,
+            "assessments_answer_incident_id": answered_id,
             "decision": fsm.decision,
             "final_state": fsm.state,
             "state_trace": fsm.log.state_trace(),

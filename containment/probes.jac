@@ -40,8 +40,9 @@ import from app.security.authz { authorize }
 import from app.security.ctxsig { sign_ctx, SIGNED_FIELDS }
 import from app.security.clock { now_ms }
 import from app.security.controls {
-    is_live, live_controls, find_control,
-    key_principal, key_tenant, key_session, key_token, key_ip, key_feature
+    is_live, live_controls, find_control, has_control,
+    key_principal, key_tenant, key_session, key_token, key_ip, key_asn,
+    key_feature, source_keys, readonly_keys
 }
 import from app.model.graph { Tenant, Principal, Session, get_platform, all_tenants }
 import from app.model.resolve {
@@ -91,6 +92,72 @@ glob:pub GUARD_ENFORCED_KINDS: list = [
     "block_source", "force_reauth", "feature_readonly"
 ];
 
+# --------------------------------------------------------------------------
+# MASKING. Why "the exact reason for this kind" is not a valid postcondition.
+#
+# guard() decides in a fixed sequence and returns on the FIRST match:
+# session validity, then token revocation, then principal suspension, then
+# source blocks, then step-up, then read-only (app/security/authz.jac steps
+# 2-3). One containment action per decision would make the exact deny reason
+# observable. A decision.v1 action_set contains SEVERAL, and the executor
+# applies them one at a time against a world in which the previous ones are
+# already enforcing.
+#
+# So once an earlier-stage control is live on the same subject, guard() can no
+# longer be made to state a later stage's reason — the subject is contained
+# twice and only the earlier containment is observable. Demanding the exact
+# reason there does not detect a weak containment; it detects a STRONGER one,
+# and rolls back an action that worked. Observed in runs/six-live: force_reauth
+# answered SOURCE_BLOCKED (a block_source applied moments earlier) and
+# suspend_principal answered NO_SESSION (a revoke_session applied moments
+# earlier). Both were genuinely contained; both were rolled back.
+#
+# The postcondition this module actually asserts is therefore:
+#
+#   the subject is DENIED, and either the denial carries this kind's own
+#   reason, or it carries the reason of a strictly EARLIER guard stage that is
+#   attributable to a live containment Control on this same subject — while
+#   THIS action's Control is itself live under the exact key guard() reads.
+#
+# Every part of that is load-bearing. An ALLOW is still a hard failure. A deny
+# from a LATER stage is still a failure (it cannot mask, so something else is
+# wrong). A deny whose reason no live Control accounts for is still a failure —
+# that is how an unrelated outage, or a principal suspended by status rather
+# than by containment, stays visible. And an action whose own Control is not
+# live under guard()'s own key is still a failure, which is what keeps the
+# c22b7f4 bug class (a Control in a spelling the enforcement surface cannot
+# match) caught rather than excused.
+# --------------------------------------------------------------------------
+
+# Deny reason -> guard()'s evaluation stage. LOWER is checked EARLIER and
+# therefore masks every higher-numbered reason. Sourced from the order of the
+# return statements in app/security/authz.jac; a reason absent from this map
+# can never mask anything and can never be masked.
+glob:pub GUARD_STAGE: dict = {
+    "NO_SESSION": 1,
+    "TOKEN_REVOKED": 2,
+    "SUSPENDED": 3,
+    "SOURCE_BLOCKED": 4,
+    "REAUTH_REQUIRED": 5,
+    "READONLY_MODE": 6
+};
+
+# Deny reason -> the containment kind that produces it. The inverse of
+# EXPECTED_DENY, and the reason a masking denial can be proven to be OUR
+# containment rather than an unrelated fault.
+glob:pub REASON_KIND: dict = {
+    "NO_SESSION": "revoke_session",
+    "TOKEN_REVOKED": "revoke_token",
+    "SUSPENDED": "suspend_principal",
+    "SOURCE_BLOCKED": "block_source",
+    "REAUTH_REQUIRED": "force_reauth",
+    "READONLY_MODE": "feature_readonly"
+};
+
+# The ASN every probe ctx presents. Held here rather than inline so the masking
+# lookup checks the same source keys guard() will build from that ctx.
+glob:pub PROBE_SRC_ASN: str = "AS64500";
+
 """The probe name to run for `kind` when the action did not name one."""
 def:pub default_probe_for(kind: str) -> str {
     return str(DEFAULT_PROBE.get(kind, "app_is_serving"));
@@ -119,7 +186,7 @@ def _probe_ctx(
     stock: dict = {
         "request_id": "probe_" + str(ts),
         "src_ip": src_ip,
-        "src_asn": "AS64500",
+        "src_asn": PROBE_SRC_ASN,
         "user_agent_hash": "ua_probe",
         "client_fp": "fp_probe",
         "session_id": session_id,
@@ -398,6 +465,113 @@ def:pub probe_contained_subject_is_blocked(kind: str, action_scope: dict, at_ms:
     };
 }
 
+"""The live containment Control that accounts for `reason`, or "" if none does.
+
+`subject` describes the request the probe actually made — the principal it
+authenticated as, the session and source it came from, its tenant, the
+operation. The keys checked below are the SAME keys guard() builds from that
+request (app/security/authz.jac step 3), so a hit here means guard() really did
+read a Control of ours, not that some unrelated condition produced the same
+string. Returns "<kind> <scope_key>" as evidence for the report."""
+def _masking_control(reason: str, subject: dict, at_ms: int) -> str {
+    mk: str = str(REASON_KIND.get(reason, ""));
+    if mk == "" {
+        return "";
+    }
+    pid: str = str(subject.get("principal_id", ""));
+    sid: str = str(subject.get("session_id", ""));
+    ip: str = str(subject.get("src_ip", ""));
+    tid: str = str(subject.get("tenant_id", ""));
+    act: str = str(subject.get("action", "project.list"));
+
+    cands: list = [];
+    if mk == "revoke_session" {
+        if sid != "" {
+            cands.append(key_session(sid));
+        }
+    } elif mk == "revoke_token" {
+        jti: str = str(subject.get("token_id", ""));
+        if jti != "" {
+            cands.append(key_token(jti));
+        }
+    } elif mk == "suspend_principal" {
+        if pid != "" {
+            cands.append(key_principal(pid));
+        }
+    } elif mk == "block_source" {
+        for k in source_keys(ip, PROBE_SRC_ASN) {
+            cands.append(str(k));
+        }
+    } elif mk == "force_reauth" {
+        if pid != "" {
+            cands.append(key_principal(pid));
+        }
+        if tid != "" {
+            cands.append(key_tenant(tid));
+        }
+    } elif mk == "feature_readonly" {
+        for k2 in readonly_keys(tid, act) {
+            cands.append(str(k2));
+        }
+    }
+
+    for raw in cands {
+        k3: str = str(raw);
+        if has_control(mk, [k3], at_ms) {
+            return mk + " " + k3;
+        }
+    }
+    return "";
+}
+
+"""Turn one guard verdict into a contained-subject check result.
+
+This is the single place the postcondition described at the top of this module
+is spelled out, so every branch of `_probe_subject` asserts the same thing."""
+def _verdict(kind: str, key: str, want: str, v: dict, subject: dict, at_ms: int) -> dict {
+    if bool(v["ok"]) {
+        # NEVER acceptable. The whole probe exists to catch this.
+        return {"ok": False, "detail": key + " -> ALLOW (want DENY " + want + ")"
+                + (" err=" + str(v["error"]) if str(v.get("error", "")) != "" else "")};
+    }
+
+    observed: str = str(v["reason"]);
+    if observed == want {
+        return {"ok": True,
+                "detail": key + " -> DENY " + observed + " (want DENY " + want + ")"};
+    }
+
+    want_stage: int = int(GUARD_STAGE.get(want, 0));
+    obs_stage: int = int(GUARD_STAGE.get(observed, 0));
+    if obs_stage == 0 or want_stage == 0 or obs_stage >= want_stage {
+        # Not something that could have masked this kind's reason: either it is
+        # not a containment reason at all, or guard() would have reached this
+        # kind's check first and did not.
+        return {"ok": False, "detail": key + " -> DENY " + observed
+                + " (want DENY " + want + "; not an earlier-stage containment reason, "
+                + "so this kind's control did not take effect)"};
+    }
+
+    masked_by: str = _masking_control(observed, subject, at_ms);
+    if masked_by == "" {
+        return {"ok": False, "detail": key + " -> DENY " + observed
+                + " (want DENY " + want + "; no live containment control accounts for "
+                + "that denial, so it is not this containment set's doing)"};
+    }
+
+    # Same lookup, same key builder, same predicate guard() itself calls.
+    if not has_control(kind, [key], at_ms) {
+        return {"ok": False, "detail": key + " -> DENY " + observed
+                + " (want DENY " + want + "; masked by " + masked_by
+                + " BUT this action's own control is NOT live at " + key + ")"};
+    }
+
+    return {"ok": True, "detail": key + " -> DENY " + observed + " MASKS " + want
+            + " (accepted: guard() checks " + observed + " before " + want
+            + " and " + masked_by + " is live, so this kind's reason is unobservable; "
+            + kind + " control verified LIVE at " + key + ")"};
+}
+
 """One contained-subject check for one scope key."""
 def _probe_subject(kind: str, key: str, want: str, at_ms: int) -> dict {
     # revoke_session — ask as that exact session.
@@ -407,28 +581,43 @@ def _probe_subject(kind: str, key: str, want: str, at_ms: int) -> dict {
         ip: str = s.ip_first if s is not None else "203.0.113.10";
         v: dict = _try(_probe_ctx(sid, ip), "project.list", "project",
                        s.tenant_id if s is not None else "");
-        hit: bool = (not bool(v["ok"])) and str(v["reason"]) == want;
-        return {"ok": hit, "detail": key + " -> "
-                + ("DENY " + str(v["reason"]) if not v["ok"] else "ALLOW")
-                + " (want DENY " + want + ")"};
+        return _verdict(kind, key, want, v, {
+            "principal_id": s.principal_id if s is not None else "",
+            "session_id": sid, "src_ip": ip,
+            "tenant_id": s.tenant_id if s is not None else "",
+            "action": "project.list"
+        }, at_ms);
     }
 
     # revoke_token — ask bearing that jti.
     if key.startswith("token:") {
-        v2: dict = _try(_probe_ctx_token(key[6:]), "project.list", "project", "");
-        hit2: bool = (not bool(v2["ok"])) and str(v2["reason"]) == want;
-        return {"ok": hit2, "detail": key + " -> "
-                + ("DENY " + str(v2["reason"]) if not v2["ok"] else "ALLOW")
-                + " (want DENY " + want + ")"};
+        jti0: str = key[6:];
+        v2: dict = _try(_probe_ctx_token(jti0), "project.list", "project", "");
+        return _verdict(kind, key, want, v2, {
+            "principal_id": "", "session_id": "", "token_id": jti0,
+            "src_ip": "203.0.113.10", "tenant_id": "", "action": "project.list"
+        }, at_ms);
     }
 
     # suspend_principal / force_reauth — ask as one of that principal's sessions.
     if key.startswith("principal:") {
         pid: str = key[10:];
+        if principal_by_id(pid) is None {
+            # A principal-scoped control naming an identity that is not in the
+            # graph is provably vacuous: guard() will never build this key for
+            # anyone, so nothing is being contained. Reporting "control LIVE"
+            # here would be the most dangerous kind of green check — the Control
+            # row exists, the action reads as active, and the subject is
+            # entirely unrestrained. FAIL, so the executor rolls it back.
+            return {"ok": False, "detail": key + " -> no such principal in the graph; "
+                    + "this control names nobody and cannot be enforcing"};
+        }
         live = live_sessions_of(pid, at_ms);
         if len(live) == 0 {
-            # No live session to test with. The control is still verifiable.
-            present: bool = find_control(kind, [key], at_ms) is not None;
+            # A real identity with no live session right now. Nothing to send a
+            # request as, so the control is verified the only way it can be:
+            # through the lookup guard() itself performs.
+            present: bool = has_control(kind, [key], at_ms);
             return {"ok": present, "detail": key + " -> no live session to test; control "
                     + ("LIVE" if present else "NOT LIVE")};
         }
@@ -444,10 +633,10 @@ def _probe_subject(kind: str, key: str, want: str, at_ms: int) -> dict {
         v3: dict = _try(_probe_ctx(sess.session_id, sess.ip_first, "scheduler",
                                    "/api/v1/projects", "GET", age),
                         act, "project", sess.tenant_id);
-        hit3: bool = (not bool(v3["ok"])) and str(v3["reason"]) == want;
-        return {"ok": hit3, "detail": key + " -> "
-                + ("DENY " + str(v3["reason"]) if not v3["ok"] else "ALLOW")
-                + " (want DENY " + want + ")"};
+        return _verdict(kind, key, want, v3, {
+            "principal_id": pid, "session_id": sess.session_id,
+            "src_ip": sess.ip_first, "tenant_id": sess.tenant_id, "action": act
+        }, at_ms);
     }
 
     # block_source — ask from that IP, as anyone who has a live session there.
@@ -462,10 +651,11 @@ def _probe_subject(kind: str, key: str, want: str, at_ms: int) -> dict {
                     }
                     v4: dict = _try(_probe_ctx(s2.session_id, ip2), "project.list",
                                     "project", s2.tenant_id);
-                    hit4: bool = (not bool(v4["ok"])) and str(v4["reason"]) == want;
-                    return {"ok": hit4, "detail": key + " -> "
-                            + ("DENY " + str(v4["reason"]) if not v4["ok"] else "ALLOW")
-                            + " (want DENY " + want + ")"};
+                    return _verdict(kind, key, want, v4, {
+                        "principal_id": s2.principal_id, "session_id": s2.session_id,
+                        "src_ip": ip2, "tenant_id": s2.tenant_id,
+                        "action": "project.list"
+                    }, at_ms);
                 }
             }
         }
@@ -497,10 +687,14 @@ def _probe_subject(kind: str, key: str, want: str, at_ms: int) -> dict {
             v5: dict = _try(_probe_ctx(str(who["session_id"]), str(who["src_ip"]),
                                        "scheduler", "/api/v1/projects", "POST"),
                             "project.create", "project", t);
-            hit5: bool = (not bool(v5["ok"])) and str(v5["reason"]) == want;
-            return {"ok": hit5, "detail": key + " -> project.create "
-                    + ("DENY " + str(v5["reason"]) if not v5["ok"] else "ALLOW")
-                    + " (want DENY " + want + ")"};
+            r5: dict = _verdict(kind, key, want, v5, {
+                "principal_id": str(who["principal_id"]),
+                "session_id": str(who["session_id"]),
+                "src_ip": str(who["src_ip"]), "tenant_id": t,
+                "action": "project.create"
+            }, at_ms);
+            return {"ok": bool(r5["ok"]),
+                    "detail": "project.create " + str(r5["detail"])};
         }
         present3: bool = find_control(kind, [key], at_ms) is not None;
         return {"ok": present3, "detail": key + " -> no member to test with; control "

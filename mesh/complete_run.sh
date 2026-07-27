@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # mesh/complete_run.sh
 #
-# Drives the decision -> containment -> verify -> rollback tail of runs/six-live
+# Drives the decision -> containment -> verify -> rollback tail of a run tree
 # with the real coordinator and the real containment executor.
 #
-#   ./mesh/complete_run.sh [--incident-id <id>]
+#   ./mesh/complete_run.sh [--run-id <id>] [--incident-id <id>]
+#
+# --run-id selects the runs/<id>/ tree (default six-live). Every argument is
+# forwarded to `jac run` verbatim; the value is peeked at here only so the
+# scratch workspace lands under the same run.
 #
 # ISOLATION, copied from containment/run_verify.sh: Jac anchors its object store
 # at $PWD/.jac/data/anchor_store.db, so this runs from a scratch directory and
@@ -18,7 +22,22 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$REPO/runs/six-live/workspace"
+
+# Peek at --run-id without consuming it: "$@" is passed through untouched below,
+# so the driver does its own parsing and the two can never disagree.
+RUN_ID="six-live"
+_want_run_id=0
+for _arg in "$@"; do
+  if [ "$_want_run_id" = "1" ]; then
+    RUN_ID="$_arg"
+    _want_run_id=0
+  elif [ "$_arg" = "--run-id" ]; then
+    _want_run_id=1
+  fi
+done
+unset _want_run_id _arg
+
+WORK="$REPO/runs/$RUN_ID/workspace"
 
 rm -rf "$WORK"
 mkdir -p "$WORK/var/audit" "$WORK/var/controls" "$WORK/var/containment"

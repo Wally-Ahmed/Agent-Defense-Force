@@ -1075,6 +1075,106 @@ def verify_9_decision() -> dict {
 }
 
 # ==========================================================================
+# 10. Masking: several actions in one action_set contain the SAME subject.
+#
+# guard() returns on the first matching control, so once an earlier-stage
+# control is live the later action's own deny reason can never be observed.
+# Demanding it anyway rolls back containment that worked — which is exactly what
+# runs/six-live did, aborting force_reauth and both suspend_principal actions
+# while the subject was demonstrably contained.
+#
+# The four checks below pin the fix from BOTH sides. Two say the masked case now
+# verifies AND says so in the report. Two say the acceptance is narrow: a missing
+# control is not excused by a masking denial, and a control naming nobody is not
+# excused at all.
+# ==========================================================================
+
+def verify_10_masking() -> dict {
+    hr("VERIFICATION 10 — an action masked by an EARLIER containment still "
+       + "verifies, and an INEFFECTIVE one still fails");
+
+    # --- SIDE A: the regression. revoke_session lands first; guard() then
+    #     answers NO_SESSION for everything, including suspend_principal.
+    ra: dict = execute(req("act_mask_001", "revoke_session",
+                           {"session_ids": ["vs_005"]}, 1800));
+    rb: dict = execute(req("act_mask_002", "suspend_principal",
+                           {"principal_hash": "vp_005", "tenant": "t_verify"}, 1800));
+    hb: dict = as_dict(rb.get("health", {}));
+    line_b: str = "";
+    for raw_l in as_list(hb.get("report", [])) {
+        l: str = str(raw_l);
+        if "contained_subject_is_blocked" in l {
+            line_b = l;
+        }
+    }
+    print("  revoke_session vs_005      -> " + str(ra["state"]));
+    print("  suspend_principal vp_005   -> " + str(rb["state"]));
+    print("      " + line_b);
+
+    check("a suspend_principal masked by an earlier revoke_session still verifies",
+          str(rb["state"]) == "active" and str(rb["health_status"]) == "pass",
+          "state=" + str(rb["state"]) + " health=" + str(rb["health_status"])
+          + " | " + line_b);
+    check("...and the report NAMES the masking control, so the trace stays auditable",
+          ("MASKS" in line_b) and ("revoke_session session:vs_005" in line_b),
+          line_b);
+
+    # --- SIDE B: masked, but THIS kind never wrote a control. block_source on
+    #     vp_006's address makes guard() answer SOURCE_BLOCKED, which is an
+    #     earlier stage than REAUTH_REQUIRED — so it CAN mask. It must not be
+    #     allowed to, because no force_reauth control exists.
+    rc: dict = execute(req("act_mask_003", "block_source",
+                           {"src_ips": ["198.51.100.16"]}, 1800));
+    probe_c: dict = run_probe("contained_subject_is_blocked", "force_reauth",
+                              {"keys": ["principal:vp_006"], "tenant_id": "t_verify"},
+                              now_ms());
+    print("");
+    print("  block_source 198.51.100.16 -> " + str(rc["state"])
+          + "   (vp_006's only address)");
+    print("      force_reauth probe with NO force_reauth control: "
+          + str(probe_c["detail"]));
+    check("a masking denial does NOT excuse a missing control for this kind",
+          not bool(probe_c["ok"]), str(probe_c["detail"]));
+
+    # --- SIDE C: a control naming an identity that is not in the graph. The
+    #     Control row is written and reads as active; it restrains nobody. This
+    #     is the shape of the c22b7f4 bug — a control in a spelling the
+    #     enforcement surface can never match — and it must abort.
+    rd: dict = execute(req("act_mask_004", "suspend_principal",
+                           {"principal_hash": "vp_nobody", "tenant": "t_verify"}, 1800));
+    hd: dict = as_dict(rd.get("health", {}));
+    line_d: str = "";
+    for raw_l2 in as_list(hd.get("report", [])) {
+        l2: str = str(raw_l2);
+        if "contained_subject_is_blocked" in l2 {
+            line_d = l2;
+        }
+    }
+    print("");
+    print("  suspend_principal vp_nobody -> " + str(rd["state"])
+          + "   controls written=" + str(len(as_list(rd.get("controls", [])))));
+    print("      " + line_d);
+    check("a containment naming an identity not in the graph FAILS and rolls back",
+          str(rd["state"]) == "rolled_back" and str(rd["health_status"]) == "fail",
+          "state=" + str(rd["state"]) + " health=" + str(rd["health_status"])
+          + " | " + line_d);
+
+    # Teardown.
+    for aid_t in ["act_mask_003", "act_mask_002", "act_mask_001"] {
+        a = find_action(aid_t);
+        if a is not None {
+            act: ContainmentAction = a;
+            if act.state == "active" {
+                rollback(act, "verification 10 teardown");
+            }
+        }
+    }
+    check("teardown left an empty control surface",
+          len(control_surface()) == 0, str(len(control_surface())) + " remain");
+    return {};
+}
+
+# ==========================================================================
 
 with entry:__main__ {
     print("containment executor — verification run");
@@ -1095,6 +1195,7 @@ with entry:__main__ {
     verify_7_blast();
     verify_8_structural();
     verify_9_decision();
+    verify_10_masking();
 
     hr("SUMMARY");
     print("  passed : " + str(len(PASSES)));
