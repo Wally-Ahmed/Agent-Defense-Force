@@ -44,7 +44,7 @@ import from config {
     PATH_PREFIX, SID_COOKIE, CSRF_COOKIE, CSRF_HEADER, REQUEST_ID_HEADER,
     SID_COOKIE_ATTRS, CSRF_COOKIE_ATTRS, SECURITY_HEADERS,
     CORS_METHODS, CORS_ALLOW_HEADERS, CORS_EXPOSE_HEADERS, CORS_MAX_AGE_S,
-    DENY_STATUS, DENY_MESSAGE, SESSION_IDLE_S, ACTION_LOGIN_FAILED
+    DENY_STATUS, DENY_MESSAGE, TRANSPORT_DENY, SESSION_IDLE_S, ACTION_LOGIN_FAILED
 }
 import from ctxsig { signed_ctx, SIG_ALG }
 import from fingerprint {
@@ -53,7 +53,7 @@ import from fingerprint {
 import from audit { AuditSink, with_transport, severity_for }
 import from policy { RateLimiter, ControlSource }
 import from sessions {
-    SessionStore, mint_csrf, csrf_valid, mint_upstream_jwt,
+    SessionStore, mint_csrf, csrf_valid, mint_upstream_jwt, token_handle,
     set_cookie_value, clear_cookie_value, ANON_BINDING
 }
 
@@ -96,6 +96,115 @@ def error_body(code: str, request_id: str, extra: dict = {}) -> dict {
 def deny_response(code: str, request_id: str, extra: dict = {}, headers: dict = {}) -> Any {
     status = DENY_STATUS.get(code, 403);
     return JSONResponse(error_body(code, request_id, extra), status_code=status, headers=headers);
+}
+
+# ---------------------------------------------------------------------------
+# Upstream envelope handling
+#
+# The gateway speaks to a jac-scale upstream, and the client must never see that
+# it does. Two envelopes exist in the wild:
+#
+#   new (jaclang 0.13.5 / jac-scale 0.2.13) — POST /walker/<Name>:
+#     {"ok":true,"type":"response",
+#      "data":{"result":{...walker fields..., "reports":[...]},
+#              "reports":[{...the walker's report...}]},
+#      "error":null,"meta":{"extra":{"http_status":200}}}
+#
+#   old (gateway/upstream_stub.jac, kept for tests/verify.sh):
+#     {"status":200,"reports":[{...the walker's report...}]}
+#
+# Only the report is ever the client's business. `data.result` echoes the whole
+# walker archetype back — including `_jac_id`, `_jac_type`, `_jac_archetype` and
+# the signed `ctx` the gateway just injected — and none of that leaves here.
+# `meta.extra.http_status` is a TRANSPORT status: on the new upstream it reads
+# 200 even when the walker denied, so it is a hint, never the answer.
+# ---------------------------------------------------------------------------
+
+"""Keys a walker may carry that are gateway/runtime internals, never client data."""
+glob:pub REPORT_PRIVATE_KEYS: list = ["_jac_id", "_jac_type", "_jac_archetype", "ctx"];
+
+"""Copy a walker report, dropping runtime internals and the echoed ctx."""
+def sanitize_report(rep: Any) -> dict {
+    out: dict = {};
+    if not isinstance(rep, dict) {
+        return out;
+    }
+    for k in rep.keys() {
+        if str(k) in REPORT_PRIVATE_KEYS {
+            continue;
+        }
+        out[str(k)] = rep[k];
+    }
+    return out;
+}
+
+"""Split an upstream response into the walker's report and a transport status.
+
+Returns {"report": dict|None, "envelope_status": int, "recognized": bool}.
+`recognized` is False for anything that is neither envelope — a jac-scale
+routing error such as {"detail":"Method Not Allowed"}, or a bare value. Those
+are never forwarded; the caller turns them into a 502."""
+def unwrap_upstream(raw: Any) -> dict {
+    out: dict = {"report": None, "envelope_status": 0, "recognized": False};
+    if not isinstance(raw, dict) {
+        return out;
+    }
+    if "data" in raw and "meta" in raw {
+        # New jac-scale envelope. `data` is null when jac-scale answered at the
+        # transport layer (walker:priv without recognised auth), so there is no
+        # report to read and only the meta status describes what happened.
+        out["recognized"] = True;
+        meta = raw.get("meta");
+        if isinstance(meta, dict) {
+            extra = meta.get("extra");
+            if isinstance(extra, dict) {
+                hs = extra.get("http_status");
+                if isinstance(hs, int) and not isinstance(hs, bool) and hs > 0 {
+                    out["envelope_status"] = hs;
+                }
+            }
+        }
+        data = raw.get("data");
+        if isinstance(data, dict) {
+            reports = data.get("reports");
+            if isinstance(reports, list) and len(reports) > 0 and isinstance(reports[0], dict) {
+                out["report"] = reports[0];
+            }
+        }
+        return out;
+    }
+    if "reports" in raw {
+        # Old envelope: the status sits at the top level and is authoritative.
+        out["recognized"] = True;
+        st = raw.get("status");
+        if isinstance(st, int) and not isinstance(st, bool) and st > 0 {
+            out["envelope_status"] = st;
+        }
+        reports = raw.get("reports");
+        if isinstance(reports, list) and len(reports) > 0 and isinstance(reports[0], dict) {
+            out["report"] = reports[0];
+        } else {
+            out["report"] = {};
+        }
+        return out;
+    }
+    return out;
+}
+
+"""The deny reason a report carries, or "" when it names none.
+
+The app writes a denial two ways (app/walkers/*.jac and app/services/errors.jac):
+    {"ok": false, "error": "INSUFFICIENT_ROLE"}
+    {"ok": false, "status": 403, "error": {"code": "INSUFFICIENT_ROLE", ...}}"""
+def report_reason(rep: dict) -> str {
+    err = rep.get("error");
+    if isinstance(err, str) {
+        return err;
+    }
+    if isinstance(err, dict) {
+        return str(err.get("code", ""));
+    }
+    return "";
 }
 
 # ---------------------------------------------------------------------------
@@ -352,10 +461,20 @@ async def handle(request: Any) -> Any {
         # only moves `last_seen_ms`. That distinction is the whole control.
         session_auth_at_ms = session.authed_at_ms;
     } elif is_bearer {
-        # An API token authenticates without ambient authority; the token itself
-        # is resolved upstream. Key the identity bucket on a hash of it so one
-        # token cannot outrun its budget by rotating source addresses.
+        # An API token authenticates without ambient authority; the token record
+        # itself is resolved upstream. token_handle() is the one derivation both
+        # sides share, so the app can find the record from the signed ctx alone —
+        # without it token_id stays "" and every authenticated request from an
+        # API client denies NO_SESSION.
+        #
+        # The raw secret stops here: it is never forwarded upstream (the proxy
+        # sets its own Authorization header below), never logged, and never
+        # written to the audit sink. Only the handle travels.
+        token_id = token_handle(bearer[7:]);
         identity = "tok:" + email_hash(bearer[7:]);
+        # session_auth_at_ms stays 0 on purpose. A bearer token carries no
+        # re-authentication event, so every step-up-protected action fails
+        # closed for API clients. That is the control, not an oversight.
     }
 
     audit_session = session_id;
@@ -405,6 +524,21 @@ async def handle(request: Any) -> Any {
     } elif is_bearer and session is None {
         # Bearer carries no ambient authority, so there is nothing for a
         # cross-site request to ride on and no CSRF token is required.
+        #
+        # This exemption is exactly as wide as the contract's, and no wider.
+        # contracts/app_api.openapi.yaml `csrf:` says:
+        #   required_on:     "Every non-GET request authenticated by cookie,
+        #                     INCLUDING POST /auth/login and POST /auth/register.
+        #                     The gateway issues a pre-session __Host-csrf cookie
+        #                     to anonymous callers on any GET so that login
+        #                     itself is CSRF-protected."
+        #   not_required_on: "Requests authenticated by Authorization: Bearer."
+        # So a fully anonymous non-GET (no cookie, no bearer) still needs the
+        # double-submit token: it must first GET /auth/session to be issued the
+        # pre-session cookie. Widening this branch to all session-less requests
+        # would make POST /auth/login answer 401 instead of 403, which some
+        # callers expect — but it would drop a control the frozen contract
+        # requires, so it is deliberately NOT done here.
         csrf_ok = True;
     } else {
         binding = session_id if session_id else ANON_BINDING;
@@ -489,7 +623,10 @@ async def handle(request: Any) -> Any {
         "Content-Type": "application/json",
         REQUEST_ID_HEADER: rid
     };
-    url = f"{st.upstream}/walker/{route['walker']}";
+    # The served archetype name, which differs from the contract's walker name
+    # for the six rows in config.WALKER_ARCHETYPE. Everything else in this file
+    # keys off route["walker"] — the contract's name — on purpose.
+    url = f"{st.upstream}/walker/{route['archetype']}";
 
     status = 502;
     payload: Any = None;
@@ -503,20 +640,6 @@ async def handle(request: Any) -> Any {
         } except Exception {
             raw = None;
         }
-        if isinstance(raw, dict) and "reports" in raw {
-            reports = raw.get("reports", []);
-            if isinstance(reports, list) and len(reports) > 0 {
-                payload = reports[0];
-            } else {
-                payload = {};
-            }
-            inner = raw.get("status", status);
-            if isinstance(inner, int) and inner > 0 {
-                status = inner;
-            }
-        } else {
-            payload = raw;
-        }
     } except Exception as exc {
         # Never leak an upstream exception message to the caller.
         print(f"[gateway] upstream error request_id={rid} kind={type(exc).__name__}", flush=True);
@@ -526,14 +649,76 @@ async def handle(request: Any) -> Any {
         );
     }
 
-    if payload is None {
-        payload = {};
-    }
-
     resp_headers: dict = {};
     for k in rl_headers.keys() {
         resp_headers[k] = rl_headers[k];
     }
+
+    # -- 10b. Unwrap: report out, envelope never forwarded -------------------
+    un = unwrap_upstream(raw);
+    rep = un["report"];
+    env_status = un["envelope_status"];
+
+    if not un["recognized"] {
+        # Neither envelope. Whatever this is, it is not a walker's answer and it
+        # does not get relayed — a jac-scale routing error would otherwise
+        # disclose the walker surface behind the gateway.
+        print(f"[gateway] unrecognized upstream envelope request_id={rid} transport={status}", flush=True);
+        return JSONResponse(error_body("UPSTREAM_UNAVAILABLE", rid), status_code=502, headers=resp_headers);
+    }
+
+    if rep is None {
+        # jac-scale answered before any walker ran. Restate its transport status
+        # as the contract's deny reason; forward nothing of the envelope.
+        deny = TRANSPORT_DENY.get(env_status, "");
+        if not deny {
+            print(f"[gateway] upstream transport error request_id={rid} status={env_status}", flush=True);
+            return JSONResponse(error_body("UPSTREAM_UNAVAILABLE", rid), status_code=502, headers=resp_headers);
+        }
+        status = DENY_STATUS.get(deny, 403);
+        payload = error_body(deny, rid);
+    } else {
+        # Status precedence, in the contract's order:
+        #   1. an explicit int `status` in the report wins;
+        #   2. otherwise `ok: false` resolves the reason code through DENY_STATUS;
+        #   3. otherwise `ok: true` takes the route's documented success status,
+        #      which comes from the frozen contract, never from the app;
+        #   4. a report with no `ok` at all (the old stub) keeps the envelope's.
+        rstatus = rep.get("status");
+        rok = rep.get("ok");
+        if isinstance(rstatus, int) and not isinstance(rstatus, bool) and rstatus > 0 {
+            status = rstatus;
+        } elif rok is False {
+            reason = report_reason(rep);
+            if not reason {
+                # A denial that names no reason is a broken upstream response,
+                # not something to guess a code for.
+                print(f"[gateway] upstream deny without a reason code request_id={rid}", flush=True);
+                return JSONResponse(error_body("UPSTREAM_UNAVAILABLE", rid), status_code=502, headers=resp_headers);
+            }
+            status = DENY_STATUS.get(reason, 403);
+        } elif rok is True {
+            status = route["success"];
+        } elif env_status > 0 {
+            status = env_status;
+        } else {
+            status = route["success"];
+        }
+
+        if rok is False {
+            # Denials answer in the contract's error envelope, the same shape
+            # deny_response() produces for the gateway's own denials — the app's
+            # raw report is not the client's business.
+            payload = error_body(report_reason(rep), rid);
+        } else {
+            payload = sanitize_report(rep);
+        }
+    }
+
+    if payload is None {
+        payload = {};
+    }
+
     response = JSONResponse(payload, status_code=status, headers=resp_headers);
 
     # -- 11. Login post-processing ------------------------------------------
@@ -621,6 +806,26 @@ async def healthz(request: Any) -> Any {
     return JSONResponse({"status": "ok"});
 }
 
+"""The unauthenticated web root.
+
+A browser that lands on the origin gets a page rather than a 404. It names no
+tenant, no user, no route and no version, and it is deliberately NOT a route
+table entry: nothing here reaches the upstream, so `/` cannot become a path
+pass-through to the walker surface. It draws from the same unrouted-traffic
+bucket as any other unmatched path, so hammering it is throttled like scanning."""
+async def web_root(request: Any) -> Any {
+    obs = observe(request, gw().trusted_proxies);
+    request.state.request_id = obs["request_id"];
+    limit = gw().limiter.check(obs["src_ip"], fallback_route_class("GET"), "", now_ms());
+    if not limit.allowed {
+        return JSONResponse(
+            error_body("RATE_LIMITED", obs["request_id"], {"retry_after_s": limit.retry_after_s}),
+            status_code=429, headers={"Retry-After": str(limit.retry_after_s)}
+        );
+    }
+    return JSONResponse({"status": "ok"});
+}
+
 # ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
@@ -640,12 +845,15 @@ def build_app(settings: Any = None) -> Any {
         store=SessionStore(secret=st.session_secret),
         limiter=RateLimiter(controls=ControlSource(path=st.controls_path)),
         sink=AuditSink(path=st.audit_path),
-        trusted_proxies=[]
+        # From $TRUSTED_PROXIES; empty unless it is set, so XFF stays ignored
+        # and src_ip is the observed peer. See Settings.trusted_proxies.
+        trusted_proxies=st.trusted_proxies
     );
     gw().sink.ensure();
 
     routes = [
         Route("/healthz", healthz, methods=["GET"]),
+        Route("/", web_root, methods=["GET"]),
         Route(PATH_PREFIX + "/{rest:path}", handle,
               methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
     ];

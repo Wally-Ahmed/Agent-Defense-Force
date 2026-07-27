@@ -11,7 +11,9 @@ walkthrough/
   script.md       the per-scene narration script + sourcing + the dur table (source of truth)
   visuals.md      the shot list: what 1800×600 frame each scene needs
   README.md       this file
-  img/            scene visuals go here (empty today)
+  img/            scene visuals — scene<n>.png + scene<n>.mp4, all 17 present
+  frames/         the frame SOURCES: kit.css (palette + safe box) + scene<n>.html.
+                  Edit these and re-capture; never re-bake from a baked png.
   scene<n>.mp3    narration — all 17 present, 706 s total (≈11 m 46 s)
   scene<n>.txt    the exact text each clip was voiced from, cut from script.md
   stt/scene<n>.json  the STT round-trip, word-level timestamps — the beat source
@@ -162,6 +164,22 @@ walkthrough/img/scene<n>.png    still fallback — gets automatic Ken Burns
 Until either exists the strip shows a labelled placeholder card carrying that scene's `shot` string,
 so the frame is never a blank black box and every viewer can see exactly which shot is outstanding.
 Full specs, capture sources and production order: `visuals.md`.
+
+**Both are shipped for all 17 scenes.** `sceneVis()` sets `visV.src` unconditionally, so a missing
+`.mp4` is a 404 on every scene — the pair is what keeps the console clean. The `.png` stays as the
+decode fallback: both load, the video just paints over the still.
+
+Rebuild a frame from its source, never from a baked png:
+
+```
+python3 -m http.server 8913 --directory walkthrough/frames    # frames are served, not file://
+node capture.js <n>          # -> img/scene<n>.png, 1800x600, warns on anything outside the safe box
+mkvideo.sh <n>               # -> img/scene<n>.mp4 at exactly the scene<n>.mp3 duration
+```
+
+`frames/kit.css` carries the palette (copied from `index.html`'s `:root`) and the **measured** safe
+box: at 1920x1080 the strip crops to source rect `x 176..1714, y 89..535` once the CSS Ken Burns
+reaches its held end state, so `.stage`'s padding is the usable canvas. Do not override it.
 
 ---
 

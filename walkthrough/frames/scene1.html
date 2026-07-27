@@ -5,7 +5,7 @@
   /* kit's `.stage > *{position:relative}` out-specifies `.bleed`; restore it */
   .stage > .bleed{position:absolute;inset:0}
 
-  .halves{display:grid;grid-template-columns:606px 48px 1fr;flex:1;min-height:0;align-items:stretch}
+  .halves{display:grid;grid-template-columns:680px 46px 1fr;flex:1;min-height:0;align-items:stretch}
 
   .half{display:flex;flex-direction:column;gap:10px;min-width:0;padding:13px 17px;
         border:1px solid var(--line);box-shadow:0 16px 34px -22px rgba(0,0,0,.85)}
@@ -19,8 +19,8 @@
        font-size:15.5px;font-weight:850;letter-spacing:.115em;text-transform:uppercase}
 
   .chain{display:flex;align-items:stretch;flex:1;min-height:0}
-  .nd{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:8px;
-      padding:11px 12px;border-radius:11px}
+  .nd{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:7px;
+      padding:10px 12px;border-radius:11px}
   .nd .ix{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:.09em}
   .nd .tt{font-size:17px;font-weight:780;line-height:1.2;letter-spacing:-.005em;color:var(--text)}
   .nd .su{font-size:16px;line-height:1.26;color:var(--dim2);
@@ -30,14 +30,16 @@
   .a .nd .ix{color:#ff8f89}
   .b .nd{background:rgba(255,215,53,.085);border:1px solid rgba(255,215,53,.34)}
   .b .nd .ix{color:var(--warn)}
-  .b .nd .tt{font-size:19.5px;line-height:1.19}
+  .b .nd .tt{font-size:18.5px;line-height:1.19}
   .b .nd.key{background:rgba(255,215,53,.17);border-color:rgba(255,215,53,.85);
              box-shadow:0 0 0 1px rgba(255,215,53,.22)}
 
   .arw{flex:none;width:26px;display:flex;align-items:center;justify-content:center}
-  .brk{display:flex;align-items:center;gap:12px;font-size:15.5px;font-weight:850;
+  .brk{flex:none;height:42px;display:flex;align-items:center;gap:14px;font-size:15.5px;font-weight:850;
        letter-spacing:.15em;text-transform:uppercase}
   .brk i{flex:1;height:1px;background:currentColor;opacity:.42}
+  .b .brk span{font-size:34px;font-weight:850;letter-spacing:.025em;line-height:1;
+               text-shadow:0 0 26px rgba(255,215,53,.35)}
 
   .pivot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
   .pivot .vs{writing-mode:vertical-rl;font-size:15px;font-weight:850;letter-spacing:.26em;color:var(--line2)}

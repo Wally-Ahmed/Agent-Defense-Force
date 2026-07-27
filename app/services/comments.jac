@@ -29,6 +29,7 @@
 # and the request fails with HTTP 422 (see projects.jac's header).
 
 import from contracts.req_ctx_contract { ReqCtx, Grant, guard }
+import from app.security.reqctx { ctx_from }
 import from app.model.graph { Comment, Project, Task, Discusses }
 import from app.security.clock { now_ms }
 import from app.security.roles { role_satisfies }
@@ -74,13 +75,13 @@ walker:priv CreateComment {
     has body: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "comment.create", "comment", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "comment.create", "comment", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -144,13 +145,13 @@ walker:priv ListComments {
     has cursor: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "comment.list", "comment", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "comment.list", "comment", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -226,13 +227,13 @@ walker:priv ReadComment {
     has comment_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "comment.read", "comment", self.tenant_id, self.comment_id);
+        g = guard(ctx_from(self.ctx), "comment.read", "comment", self.tenant_id, self.comment_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -279,13 +280,13 @@ walker:priv DeleteComment {
     has comment_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "comment.delete", "comment", self.tenant_id, self.comment_id);
+        g = guard(ctx_from(self.ctx), "comment.delete", "comment", self.tenant_id, self.comment_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;

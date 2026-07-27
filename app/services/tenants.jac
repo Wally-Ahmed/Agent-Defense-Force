@@ -3,7 +3,7 @@
 #
 # THE SHAPE, same as every walker in app/services/ (see projects.jac):
 #
-#   1. guard(ReqCtx(**self.ctx), action, target_kind, tenant_id, target_id)
+#   1. guard(ctx_from(self.ctx), action, target_kind, tenant_id, target_id)
 #      -- the FIRST executable statement, no exceptions.
 #   2. open_scope() -- re-read the Membership from the graph (defence in
 #      depth) -- EXCEPT ListMyTenants and CreateTenant, which have no tenant
@@ -42,6 +42,7 @@
 
 import from typing { cast }
 import from contracts.req_ctx_contract { ReqCtx, Grant, guard }
+import from app.security.reqctx { ctx_from }
 import from app.model.graph { Tenant, Membership, Principal, Hosts, HasMember, Identifies, get_platform }
 import from app.model.resolve { tenant_by_id, memberships_of, projects_of }
 import from app.security.clock { now_ms }
@@ -102,7 +103,7 @@ walker:priv ListMyTenants {
         # guard() skips its tenancy steps for a TENANTLESS_ACTIONS entry only
         # when the request carries no tenant scope either, which is what keeps
         # the same action fully checked on GET /tenants/{tenant_id} below.
-        g = guard(ReqCtx(**self.ctx), "tenant.read", "tenant", "", "");
+        g = guard(ctx_from(self.ctx), "tenant.read", "tenant", "", "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
@@ -173,7 +174,7 @@ walker:priv CreateTenant {
         # `tenant.create` is guard()'s one TENANTLESS_ACTION: it skips
         # membership/role entirely and still authenticates the caller. tenant_id
         # and target_id are "" -- there is no tenant to scope this to yet.
-        g = guard(ReqCtx(**self.ctx), "tenant.create", "tenant", "", "");
+        g = guard(ctx_from(self.ctx), "tenant.create", "tenant", "", "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
@@ -240,13 +241,13 @@ walker:priv ReadTenant {
     has tenant_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "tenant.read", "tenant", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "tenant.read", "tenant", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;

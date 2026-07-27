@@ -59,3 +59,21 @@ import from app.walkers.tenancy {
 import from app.walkers.work {
     ListProjects, ReadProject, ListTasks, ReadTask, ListComments
 }
+
+# The remaining contract endpoints live in app/services/. These imports are
+# SELECTIVE BY NAME, never `import app.services.X`, and that is load-bearing: the
+# service modules also define archetypes named ListProjects, ReadProject,
+# ListTasks, ReadTask, ListComments, CreateTenant, ReadTenant, InviteMember,
+# AcceptInvite and RemoveMember. A whole-module import would bind those into this
+# namespace and let them shadow the app/walkers/ implementations above, silently
+# swapping the audited, test-covered path for a different one. Naming each walker
+# explicitly means only the walkers listed here are added, and the ones already
+# bound above stay bound.
+import from app.services.tenants { ListMyTenants }
+import from app.services.members { ListMembers }
+import from app.services.projects { CreateProject, UpdateProject, DeleteProject }
+import from app.services.tasks { CreateTask, UpdateTask, DeleteTask, AssignTask }
+import from app.services.comments { CreateComment, ReadComment, DeleteComment }
+import from app.services.discovery {
+    SearchTenant, RequestExport, DownloadExport, IntegrationCall
+}

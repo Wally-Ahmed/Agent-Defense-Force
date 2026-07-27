@@ -3,7 +3,7 @@
 #
 # THE SHAPE, same as every walker in app/services/ (see projects.jac):
 #
-#   1. guard(ReqCtx(**self.ctx), action, target_kind, tenant_id, target_id)
+#   1. guard(ctx_from(self.ctx), action, target_kind, tenant_id, target_id)
 #      -- the FIRST executable statement, no exceptions.
 #   2. open_scope() -- re-read the Membership from the graph (defence in depth)
 #   3. the operation's own role floor -- for RequestExport / DownloadExport /
@@ -42,6 +42,7 @@
 
 import from typing { cast }
 import from contracts.req_ctx_contract { ReqCtx, Grant, guard }
+import from app.security.reqctx { ctx_from }
 import from app.model.graph { Project, Task, Comment, Membership, ExportJob, Exports }
 import from app.security.clock { now_ms }
 import from app.security.roles { role_satisfies }
@@ -200,13 +201,13 @@ walker:priv SearchTenant {
     has cursor: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "search.query", "tenant", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "search.query", "tenant", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -327,13 +328,13 @@ walker:priv RequestExport {
     has project_ids: list = [];
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "export.request", "export", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "export.request", "export", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -443,13 +444,13 @@ walker:priv DownloadExport {
     has export_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "export.download", "export", self.tenant_id, self.export_id);
+        g = guard(ctx_from(self.ctx), "export.download", "export", self.tenant_id, self.export_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -558,13 +559,13 @@ walker:priv IntegrationCall {
     has idempotency_key: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "integration.call", "integration", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "integration.call", "integration", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;

@@ -9,10 +9,10 @@
     padding:8px 14px;border-radius:10px;
     background:rgba(30,202,255,.12);border:1px solid rgba(30,202,255,.7);color:#cdf3ff;
   }
-  .qhead,.qrow{display:grid;grid-template-columns:200px 118px 174px 62px 60px 78px;gap:10px;align-items:center}
+  .qhead,.qrow{display:grid;grid-template-columns:214px 118px 160px 62px 60px 78px;gap:10px;align-items:center}
   .qhead{font-size:15px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--dim2)}
   .qhead .r{text-align:right}
-  .qrow{min-height:29px}
+  .qrow{min-height:31px}
   .qrow .nm{font-family:var(--mono);font-size:16px;color:var(--mc);font-weight:700}
   .qrow .vd{font-family:var(--mono);font-size:15px;color:#ffc6c2}
   .qrow .cf{font-family:var(--mono);font-size:17px;font-weight:800;color:var(--mc);text-align:right}
@@ -23,7 +23,7 @@
   .sig .tot{font-family:var(--mono);font-size:24px;font-weight:850;color:var(--win);text-align:right;letter-spacing:-.02em}
 
   .rcol{display:flex;flex-direction:column;gap:10px;min-width:0}
-  .scorenum{font-size:82px;font-weight:850;letter-spacing:-.045em;line-height:.92;color:var(--win)}
+  .scorenum{font-size:76px;font-weight:850;letter-spacing:-.045em;line-height:.92;color:var(--win)}
   .ladwrap{position:relative;padding-bottom:24px}
   .lad{position:relative;height:16px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.06)}
   .lad > i{position:absolute;left:0;top:0;bottom:0;width:95%;border-radius:8px;
@@ -39,12 +39,16 @@
   .chiprow{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
 
   .callout{
-    display:flex;flex-direction:column;gap:4px;flex:none;width:1118px;
-    padding:11px 20px;border-radius:13px;
+    display:flex;flex-direction:column;gap:2px;flex:none;width:700px;
+    padding:10px 20px;border-radius:13px;
     background:rgba(255,215,53,.11);border:1px solid rgba(255,215,53,.66);
   }
-  .callout .t{font-size:23px;font-weight:850;letter-spacing:-.01em;color:#fff0b0}
-  .callout .s{font-size:16.5px;line-height:1.3;color:var(--dim)}
+  .callout .t{font-size:23px;font-weight:850;letter-spacing:-.01em;line-height:1.2;color:#fff0b0}
+  .callout .s{font-size:16.5px;line-height:1.25;color:var(--dim);white-space:nowrap}
+  .dbox{display:flex;flex-direction:column;gap:2px;flex:none;width:386px;
+    padding:10px 18px;border-radius:13px;background:var(--panel2);border:1px solid var(--line2)}
+  .dbox .dt{font-size:16px;font-weight:850;letter-spacing:.08em;text-transform:uppercase;color:var(--dim2);line-height:1.2}
+  .dbox .ds{font-family:var(--mono);font-size:16px;line-height:1.25;color:var(--text);white-space:nowrap}
 </style>
 
 <div class="stage" style="gap:12px">
@@ -58,7 +62,7 @@
 
   <div class="main">
 
-    <div class="card cool" style="padding:14px 22px;display:flex;flex-direction:column;gap:8px">
+    <div class="card cool" style="padding:12px 22px;display:flex;flex-direction:column;gap:7px">
       <div class="qhead">
         <span>responder</span><span>verdict</span><span>confidence</span>
         <span class="r">conf</span><span class="r">× w</span><span class="r">contrib</span>
@@ -70,7 +74,7 @@
       <div class="qrow m5"><span class="nm">responder_glm</span><span class="vd">malicious</span><span class="mbar"><i style="width:93%"></i></span><span class="cf">0.93</span><span class="wt">× 1.0</span><span class="ct">0.93</span></div>
       <div class="rule"></div>
       <div class="sig">
-        <span class="lb">score = Σ w(verdict) × confidence &nbsp;·&nbsp; w(malicious)=+1.0 · w(suspicious)=+0.4 · w(benign)=−1.0</span>
+        <span class="lb">score = Σ w(verdict) × confidence</span>
         <span class="tot">4.75</span>
       </div>
     </div>
@@ -103,7 +107,7 @@
         <span class="chip mono">voted 5/5</span>
       </div>
       <div class="chiprow">
-        <span class="chip mono">split → 1 bounded deliberation round → human</span>
+        <span class="chip mono">w: malicious +1.0 · suspicious +0.4 · benign −1.0</span>
         <span class="chip mono">no_vote []</span>
       </div>
     </div>
@@ -112,7 +116,11 @@
   <div class="row c" style="gap:14px">
     <div class="callout">
       <div class="t">per-responder weights: NOT YET DEFINED</div>
-      <div class="s">w() weights the <b>verdict class</b>, not which model said it — all five responders currently count exactly the same. It is the one number in this design we have not fixed, and we would rather say so than invent one.</div>
+      <div class="s">w() weights the verdict class, not which model said it. All five count the same.</div>
+    </div>
+    <div class="dbox">
+      <div class="dt">on a split</div>
+      <div class="ds">1 bounded deliberation round → human</div>
     </div>
     <div class="spacer"></div>
   </div>

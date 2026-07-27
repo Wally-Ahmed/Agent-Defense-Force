@@ -2,6 +2,8 @@
 <title>scene12 — the ordinary controls refuse</title>
 <link rel="stylesheet" href="kit.css">
 <style>
+  /* header height is pinned so scene12 and scene13 share identical main-row geometry */
+  .hdr{height:42px;flex:none}
   .main{display:flex;gap:26px;flex:1;min-height:0;align-items:stretch}
   .logwrap{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
   /* column header — same 4-column geometry as .lrow, never restyles .lrow itself */
@@ -9,23 +11,26 @@
          font-size:12.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)}
   .lhead .r{text-align:right}
 
-  .ladder{width:302px;flex:none;display:flex;flex-direction:column;padding:12px 13px}
+  /* 308px = lhead(15) + gap(8) + six kit .lrow (6*40 + 5*9). Pinned, not stretched,
+     so the ladder's bottom edge lands exactly on the last log row in BOTH twins. */
+  .ladder{width:302px;flex:none;height:308px;align-self:flex-start;
+          display:flex;flex-direction:column;padding:12px 13px}
   .ladder .lt{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:850;
               letter-spacing:.14em;text-transform:uppercase;color:var(--fail);padding-bottom:7px}
-  .steps{flex:1;display:flex;flex-direction:column;justify-content:space-between}
+  .steps{flex:1;display:flex;flex-direction:column;justify-content:space-between;min-height:0}
   .step{display:grid;grid-template-columns:23px 1fr 26px;gap:7px;align-items:center;
-        font-family:var(--mono);font-size:15px;line-height:1;padding:2px 6px;border-radius:5px;
-        color:var(--dim2);border:1px solid transparent}
+        font-family:var(--mono);font-size:15px;line-height:16.5px;padding:0 6px;border-radius:5px;
+        color:var(--dim2)}
   .step .n{color:var(--line2);font-weight:700}
   .step .g{font-size:11.5px;letter-spacing:.06em;color:var(--line2);text-align:right}
-  .step.hit{background:rgba(255,81,74,.16);border-color:rgba(255,81,74,.55);color:#ffd0cc;font-weight:750}
+  .step.hit{background:rgba(255,81,74,.16);box-shadow:inset 0 0 0 1px rgba(255,81,74,.55);color:#ffd0cc;font-weight:750}
   .step.hit .n{color:var(--fail);font-weight:850}
   .step.hit .g{color:#ffb0ab}
 </style>
 
 <div class="stage">
 
-  <div class="row c" style="gap:14px">
+  <div class="row c hdr" style="gap:14px">
     <div class="kick">Beat 1 · the ordinary controls</div>
     <div class="chip mono">x-northwind-decision-order · frozen</div>
     <div class="spacer"></div>
@@ -74,7 +79,7 @@
   </div>
 
   <div class="row c">
-    <div class="banner badb" style="flex:none">every one of these is <em style="font-style:normal;color:#fff">decidable from a single request</em></div>
+    <div class="banner badb" style="flex:none"><span>every one of these is <b style="color:#fff">decidable from a single request</b></span></div>
     <div class="chip strike">no correlation</div>
     <div class="chip strike">no history</div>
     <div class="spacer"></div>

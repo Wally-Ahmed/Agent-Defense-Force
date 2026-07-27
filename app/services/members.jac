@@ -39,6 +39,7 @@
 
 import from typing { cast }
 import from contracts.req_ctx_contract { ReqCtx, Grant, guard }
+import from app.security.reqctx { ctx_from }
 import from app.model.graph {
     Tenant, Membership, Principal, Invite, HasMember, Identifies, Invited
 }
@@ -103,13 +104,13 @@ walker:priv ListMembers {
     has status: str = "active";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "tenant.read", "member", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "tenant.read", "member", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -190,13 +191,13 @@ walker:priv InviteMember {
     has expires_in_s: int = 0;
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "member.invite", "invite", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "member.invite", "invite", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -272,7 +273,7 @@ walker:priv AcceptInvite {
     has invite_token: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "member.accept", "invite", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "member.accept", "invite", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
@@ -383,13 +384,13 @@ walker:priv ChangeMemberRole {
         # The membership_id is the contract's address for this row and is
         # passed to guard() as the target (never ""), so guard() resolves it by
         # traversal from the tenant and audits the row that was actually named.
-        g = guard(ReqCtx(**self.ctx), "member.role_change", "member", self.tenant_id, self.membership_id);
+        g = guard(ctx_from(self.ctx), "member.role_change", "member", self.tenant_id, self.membership_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -460,13 +461,13 @@ walker:priv RemoveMember {
 
     can go with entry {
         # Addressed by membership_id, exactly as ChangeMemberRole is.
-        g = guard(ReqCtx(**self.ctx), "member.remove", "member", self.tenant_id, self.membership_id);
+        g = guard(ctx_from(self.ctx), "member.remove", "member", self.tenant_id, self.membership_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;

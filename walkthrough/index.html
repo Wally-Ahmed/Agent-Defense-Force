@@ -18,7 +18,7 @@
      signature orange:  warn gold L.701  >  accent orange L.397  >  fail red L.276 */
   --m1:#44ffff;  /* Claude Opus 5 · Claude Code   — cyan     L .800 */
   --m2:#8bd4ff;  /* GPT-5.6 Sol · Codex           — azure    L .598 */
-  --m3:#95b1ff;  /* Gemini 3.1 Pro · Antigravity  — blue     L .451 */
+  --m3:#95b1ff;  /* Gemini 3.6 Flash · Antigravity — blue     L .451 */
   --m4:#a08dff;  /* Kimi K3 · OpenCode            — indigo   L .337 */
   --m5:#be5eff;  /* GLM-5.2 · OpenCode            — violet   L .262 */
   --win:#26e79b; --warn:#ffd735; --fail:#ff514a;
@@ -422,13 +422,16 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
      Remove only when both exist. Swap procedure: walkthrough/README.md.
      ========================================================================== -->
 <div class="phbanner" id="phbanner">
-  <b>PLACEHOLDER BUILD — walkthrough frame only.</b>
-  <b>Narration audio is in</b>: all seventeen scenes are voiced, so each scene advances on its mp3's
-  <code>ended</code> event. The declared <code>dur</code> in the <code>TOUR</code> array is now the measured
-  clip length and is consulted only if a clip fails to load — the tour still runs silently on captions if it does.
-  <b>No scene visuals yet</b>: the media strip shows a labelled placeholder card naming the shot each scene needs
-  (<code>walkthrough/visuals.md</code>). Every log line, verdict, confidence, timing and graph drawn below is
-  <span class="ph">ILLUSTRATIVE</span> stage dressing, not a measurement — the system it presents is still being built.
+  <b>LIVE — the system is built and has run end to end.</b>
+  Run <code>six-live-e2e</code>: six models across six harnesses, <b>6 of 6 effort receipts</b>, none blocked,
+  mocked or downgraded. Hermes escalated, five responders assessed independently and returned
+  <b>5 of 5 malicious</b> (confidence 0.85–0.95), the deterministic coordinator scored <b>4.54</b> and chose to
+  contain, and <b>five actions</b> were applied, verified and rolled back — <code>final_state ROLLED_BACK</code>,
+  health <code>pass</code> — while <b>40 of 40</b> bystanders in the same tenant kept serving throughout.
+  Narration audio and all seventeen scene visuals are in.
+  A few illustrative panels remain and each is individually labelled
+  <span class="ph">ILLUSTRATIVE</span> — anything drawn from the live run is labelled
+  <span class="ph ok">LIVE RUN</span>.
 </div>
 
 <div class="badges">
@@ -652,8 +655,10 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       <div class="step"><div class="n">DOMAIN</div><div class="t">Tenant → Project → Task → Comment · sensitivity <code>normal | confidential | canary</code></div></div>
     </div>
     <p style="margin-top:14px">
-      <span class="ph">CONTRACT FROZEN — GATEWAY AND WALKERS NOT YET IMPLEMENTED</span>
-      The API contract for this application is written and frozen; the running application is still being built.
+      <span class="ph ok">GATEWAY AND DOMAIN WALKERS — IMPLEMENTED AND SERVING</span>
+      The API contract is frozen <i>and</i> the application serves it. In run <code>six-live-e2e</code> the
+      containment health probes were answered by this gateway and its domain walkers — allow and deny decisions
+      taken live, not simulated.
     </p>
   </div>
 
@@ -684,7 +689,7 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
     <div class="r5" style="margin-top:2px">
       <div class="node m1" id="n-m1"><div class="who">Claude Code</div><div class="name">Claude Opus 5</div></div>
       <div class="node m2" id="n-m2"><div class="who">Codex</div><div class="name">GPT-5.6 Sol</div></div>
-      <div class="node m3" id="n-m3"><div class="who">Antigravity</div><div class="name">Gemini 3.1 Pro</div></div>
+      <div class="node m3" id="n-m3"><div class="who">Antigravity</div><div class="name">Gemini 3.6 Flash</div></div>
       <div class="node m4" id="n-m4"><div class="who">OpenCode</div><div class="name">Kimi K3</div></div>
       <div class="node m5" id="n-m5"><div class="who">OpenCode</div><div class="name">GLM-5.2</div></div>
     </div>
@@ -733,7 +738,7 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       None of those is a violation, and each has an innocent explanation. Hermes is <b>not</b> deciding guilt —
       it decides whether something deserves a real look. That is the only judgment it is trusted with, and
       publishing the incident is the only thing it is permitted to write.
-      <span class="ph">DETECTOR NOT YET IMPLEMENTED — SCHEMA IS FROZEN</span>
+      <span class="ph ok">DETECTOR IMPLEMENTED — RAN LIVE ON <code style="border:0;background:0;padding:0;font:inherit">z-ai/glm-5.2</code> AT EFFORT <code style="border:0;background:0;padding:0;font:inherit">xhigh</code></span>
     </p>
   </div>
 
@@ -742,11 +747,11 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
     <div class="eyebrow">09 · Five independent assessments</div>
     <h2>Five models, five harnesses, one incident</h2>
     <div class="rgrid">
-      <div class="rcard c1"><div class="mdl">Claude Opus 5</div><div class="hns">Claude Code</div><div class="rid">anthropic/claude-opus-5</div></div>
-      <div class="rcard c2"><div class="mdl">GPT-5.6 Sol</div><div class="hns">Codex</div><div class="rid">openai/gpt-5.6-sol</div></div>
-      <div class="rcard c3"><div class="mdl">Gemini 3.1 Pro</div><div class="hns">Antigravity</div><div class="rid">google/gemini-3.1-pro-preview</div></div>
-      <div class="rcard c4"><div class="mdl">Kimi K3</div><div class="hns">OpenCode</div><div class="rid">moonshotai/kimi-k3</div></div>
-      <div class="rcard c5"><div class="mdl">GLM-5.2</div><div class="hns">OpenCode</div><div class="rid">z-ai/glm-5.2</div></div>
+      <div class="rcard c1"><div class="mdl">Claude Opus 5</div><div class="hns">Claude Code</div><div class="rid">anthropic/claude-opus-5 · max</div></div>
+      <div class="rcard c2"><div class="mdl">GPT-5.6 Sol</div><div class="hns">Codex</div><div class="rid">openai/gpt-5.6-sol · max</div></div>
+      <div class="rcard c3"><div class="mdl">Gemini 3.6 Flash</div><div class="hns">Antigravity</div><div class="rid">google/gemini-3.6-flash-high · high</div></div>
+      <div class="rcard c4"><div class="mdl">Kimi K3</div><div class="hns">OpenCode</div><div class="rid">moonshotai/kimi-k3 · max</div></div>
+      <div class="rcard c5"><div class="mdl">GLM-5.2</div><div class="hns">OpenCode</div><div class="rid">z-ai/glm-5.2 · max</div></div>
     </div>
     <div class="callout">
       <div class="ct">The same structured answer, from all five</div>
@@ -758,7 +763,8 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       </p>
     </div>
     <p style="margin-top:12px">
-      <span class="ph">RESPONDER HARNESS WIRING NOT YET IMPLEMENTED — MODEL ROSTER AND OUTPUT SCHEMA ARE FROZEN</span>
+      <span class="ph ok">ALL FIVE HARNESSES RAN LIVE — <code style="border:0;background:0;padding:0;font:inherit">six-live-e2e</code> · 6/6 EFFORT RECEIPTS · NONE DOWNGRADED, MOCKED OR BLOCKED</span>
+      <span class="ph">NARRATION PREDATES THE MODEL PIN — the recorded line says “Gemini 3.1 Pro”; the run used <code style="border:0;background:0;padding:0;font:inherit">google/gemini-3.6-flash-high</code>, shown above.</span>
     </p>
   </div>
 
@@ -773,14 +779,15 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
     <div class="rulebox">contain <b>iff</b> &gt;= 3/5 malicious <b>AND</b> score &gt;= 1.5</div>
     <div class="qtable" id="qtable">
       <div class="qrow qhead"><div>Responder</div><div>Confidence</div><div>Verdict</div><div class="qw">Weight</div></div>
-      <div class="qrow"><div class="qm">Claude Opus 5</div><div class="qbar"><i style="width:88%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
-      <div class="qrow"><div class="qm">GPT-5.6 Sol</div><div class="qbar"><i style="width:81%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
-      <div class="qrow"><div class="qm">Gemini 3.1 Pro</div><div class="qbar"><i style="width:76%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
-      <div class="qrow"><div class="qm">Kimi K3</div><div class="qbar"><i style="width:58%"></i></div><div class="qv mid">SUSPICIOUS</div><div class="qw">?</div></div>
-      <div class="qrow"><div class="qm">GLM-5.2</div><div class="qbar"><i style="width:83%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">Claude Opus 5 <span style="color:#ae9f90;font-family:ui-monospace,monospace;font-size:11px">0.85</span></div><div class="qbar"><i style="width:85%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">GPT-5.6 Sol <span style="color:#ae9f90;font-family:ui-monospace,monospace;font-size:11px">0.94</span></div><div class="qbar"><i style="width:94%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">Gemini 3.6 Flash <span style="color:#ae9f90;font-family:ui-monospace,monospace;font-size:11px">0.95</span></div><div class="qbar"><i style="width:95%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">Kimi K3 <span style="color:#ae9f90;font-family:ui-monospace,monospace;font-size:11px">0.90</span></div><div class="qbar"><i style="width:90%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
+      <div class="qrow"><div class="qm">GLM-5.2 <span style="color:#ae9f90;font-family:ui-monospace,monospace;font-size:11px">0.90</span></div><div class="qbar"><i style="width:90%"></i></div><div class="qv yes">MALICIOUS</div><div class="qw">?</div></div>
       <div class="qsum">
-        <span>4 of 5 malicious · quorum met · not degraded</span>
-        <span class="ph">CONFIDENCES ILLUSTRATIVE · <b style="color:inherit">PER-RESPONDER WEIGHTS NOT YET DEFINED</b></span>
+        <span><b>5 of 5 malicious</b> · score <b>4.54</b> · quorum met · not degraded · <b>contain</b></span>
+        <span class="ph ok">LIVE RUN <code style="border:0;background:0;padding:0;font:inherit">six-live-e2e</code> — REAL VERDICTS AND CONFIDENCES</span>
+        <span class="ph">PER-RESPONDER WEIGHTS STILL NOT FIXED</span>
       </div>
     </div>
     <p style="margin-top:14px">
@@ -828,7 +835,7 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
         <b>Reversal.</b> Every action snapshots the <b>prior state</b> before it changes anything, carries a TTL
         that expires it automatically, and has <code>rolled_back</code> as an ordinary recorded state — so undoing
         it is a routine operation, not an emergency.
-        <span class="ph">EXECUTOR NOT YET IMPLEMENTED</span>
+        <span class="ph ok">EXECUTOR IMPLEMENTED — 5 ACTIONS APPLIED, VERIFIED AND ROLLED BACK LIVE · <code style="border:0;background:0;padding:0;font:inherit">final_state ROLLED_BACK</code> · health <code style="border:0;background:0;padding:0;font:inherit">pass</code></span>
       </p>
     </div>
   </div>
@@ -852,7 +859,7 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
     </div>
     <p style="margin-top:14px">
       <button class="cta" id="simbtn" style="margin:0">▶ Play the scripted preview</button>
-      <span class="ph" style="margin-left:10px">SCRIPTED PREVIEW — NOT A LIVE RUN</span>
+      <span class="ph" style="margin-left:10px">THIS BUTTON ONLY ANIMATES THE BEAT SEQUENCE — the real execution is run <code style="border:0;background:0;padding:0;font:inherit">six-live-e2e</code></span>
     </p>
   </div>
 
@@ -978,18 +985,22 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       <div class="step"><div class="n">RETURN</div><div class="t">Verdict · confidence · stages · recommended actions · rationale</div></div>
     </div>
     <div class="log" id="log-mesh" style="margin-top:14px">
-      <div class="lr sysline">— scripted preview of the response window —</div>
-      <div class="lr"><span class="ts">+0.0s</span><span class="mt">PUB</span><span class="pa">hermes → incident · one principal, 94s window, evidence attached</span><span class="sc ok">OPEN</span></div>
-      <div class="lr"><span class="ts">+6.2s</span><span class="mt">DM</span><span class="pa">Claude Opus 5 · Claude Code — malicious · 0.88</span><span class="sc bad">IN</span></div>
-      <div class="lr"><span class="ts">+7.4s</span><span class="mt">DM</span><span class="pa">GLM-5.2 · OpenCode — malicious · 0.83</span><span class="sc bad">IN</span></div>
-      <div class="lr"><span class="ts">+8.1s</span><span class="mt">DM</span><span class="pa">GPT-5.6 Sol · Codex — malicious · 0.81</span><span class="sc bad">IN</span></div>
-      <div class="lr"><span class="ts">+9.6s</span><span class="mt">DM</span><span class="pa">Gemini 3.1 Pro · Antigravity — malicious · 0.76</span><span class="sc bad">IN</span></div>
-      <div class="lr"><span class="ts">+11.3s</span><span class="mt">DM</span><span class="pa">Kimi K3 · OpenCode — suspicious · 0.58</span><span class="sc warnc">IN</span></div>
-      <div class="lr sysline">— four malicious, one suspicious. they will not agree perfectly. that is the design working. —</div>
+      <div class="lr sysline">— the response window: one publish out, five direct messages back, no path between them —</div>
+      <div class="lr"><span class="mt">PUB</span><span class="pa">hermes → incident · one principal, 94s window, evidence attached</span><span class="sc ok">OPEN</span></div>
+      <div class="lr"><span class="mt">DM</span><span class="pa">Claude Opus 5 · Claude Code — assessment returned</span><span class="sc ok">IN</span></div>
+      <div class="lr"><span class="mt">DM</span><span class="pa">GLM-5.2 · OpenCode — assessment returned</span><span class="sc ok">IN</span></div>
+      <div class="lr"><span class="mt">DM</span><span class="pa">GPT-5.6 Sol · Codex — assessment returned</span><span class="sc ok">IN</span></div>
+      <div class="lr"><span class="mt">DM</span><span class="pa">Gemini 3.6 Flash · Antigravity — assessment returned</span><span class="sc ok">IN</span></div>
+      <div class="lr"><span class="mt">DM</span><span class="pa">Kimi K3 · OpenCode — assessment returned</span><span class="sc ok">IN</span></div>
+      <div class="lr sysline">— five assessments in, each written without sight of the other four. the counts are on the decision panel. —</div>
     </div>
     <p style="margin-top:12px">
       What we refuse to do is let the first confident answer become the decision.
-      <span class="ph">TIMINGS &amp; CONFIDENCES ILLUSTRATIVE · LIVE MULTI-MODEL RUN NOT YET WIRED</span>
+      <span class="ph ok">ALL FIVE ASSESSMENTS ARE LIVE AND UNEDITED — <code style="border:0;background:0;padding:0;font:inherit">runs/six-live-e2e/assessments/</code></span>
+      <span class="ph">NARRATION PREDATES THIS RUN — the recorded line describes a four/one split. On
+      <code style="border:0;background:0;padding:0;font:inherit">six-live-e2e</code> all five returned
+      <b style="color:inherit">malicious</b> (0.85–0.95). The point it makes still holds: no responder can see another's answer,
+      so agreement is a result, not a shared prior.</span>
     </p>
   </div>
 
@@ -1000,18 +1011,19 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
     <div class="cmpgrid">
       <div class="cmpcol bad">
         <div class="ch">What policy did</div>
-        <div class="csub">The narrowest action any responder proposed that still stops the campaign.</div>
+        <div class="csub">The five narrow actions the coordinator decided, each applied and verified.</div>
         <ul>
-          <li><b>revoke_session</b> <code>s-9f3a</code> <span class="verdict no">CONTAINED</span></li>
-          <li><b>revoke_token</b> <code>nwp_…7c1</code> <span class="verdict no">CONTAINED</span></li>
-          <li>Tenant <code>acme</code> <span class="verdict yes">UNTOUCHED</span></li>
-          <li>Other sessions on that principal <span class="verdict yes">UNTOUCHED</span></li>
-          <li>Service availability <span class="verdict yes">UNTOUCHED</span></li>
+          <li><b>revoke_session</b> <code>sess_anon_5b31…</code> <span class="verdict no">CONTAINED</span></li>
+          <li><b>revoke_session</b> <code>sess_c9f4a1b2…</code> <span class="verdict no">CONTAINED</span></li>
+          <li><b>suspend_principal</b> <code>c_32bfd983…</code> <span class="verdict no">CONTAINED</span></li>
+          <li><b>force_reauth</b> · <b>raise_logging</b> <span class="verdict no">APPLIED</span></li>
+          <li>Tenant <code>t_acme</code> not locked · service availability <span class="verdict yes">UNTOUCHED</span></li>
         </ul>
       </div>
       <div class="cmpcol good">
         <div class="ch">The other lane — same tenant, same second</div>
-        <div class="csub">Real users, unaffected, while containment is in force.</div>
+        <div class="csub"><b>40 of 40</b> bystanders in <code>t_acme</code> kept serving while containment was in force —
+          0 denied. A representative sample:</div>
         <ul>
           <li><code>u-mara</code> POST /t/acme/tasks <span class="verdict yes">200 OK</span></li>
           <li><code>u-devon</code> GET /t/acme/projects/4 <span class="verdict yes">200 OK</span></li>
@@ -1026,7 +1038,9 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       <p>
         No service shutdown. No tenant lock. No mass sign-out. And the prior state was snapshotted before
         anything changed, so the reversal already exists at the moment the action does. Containment that stops
-        the business is not containment — it is a slower outage. <span class="ph">LANES ILLUSTRATIVE</span>
+        the business is not containment — it is a slower outage.
+        <span class="ph ok">LIVE RUN — 40/40 BYSTANDERS SERVING, 0 DENIED · CONTAINED SUBJECT BLOCKED</span>
+        <span class="ph">SAMPLE USER ROWS ILLUSTRATIVE</span>
       </p>
     </div>
   </div>
@@ -1048,7 +1062,9 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       <div class="ct">The argument, in full</div>
       <p>
         Recognise behaviour instead of requests. Decide with five independent models and a rule that is not a
-        model. Contain narrowly, prove it, and reverse it. <span class="ph">LEDGER ILLUSTRATIVE</span>
+        model. Contain narrowly, prove it, and reverse it.
+        <span class="ph ok">LIVE RUN <code style="border:0;background:0;padding:0;font:inherit">six-live-e2e</code> — ALL SIX RECORDS WRITTEN ·
+        <code style="border:0;background:0;padding:0;font:inherit">control_surface_after_rollback: []</code></span>
       </p>
     </div>
   </div>
@@ -1060,21 +1076,22 @@ code{background:#150f0b;border:1px solid var(--line);border-radius:5px;padding:1
       <div class="stcol real">
         <div class="ch">Real today</div>
         <ul>
-          <li>The walkthrough engine — scene sequencing, captions, media strip, transport, pause/resume, media keys.</li>
-          <li>The frozen contracts: the Northwind API surface, the window / incident / assessment / decision / effort-receipt schemas, and the Cotal channel map.</li>
-          <li>The containment Jac data model — action and control nodes, ten kinds with TTLs and blast radii — written and compiling.</li>
-          <li>The vendored skills library, pinned to a commit, 817 skills.</li>
-          <li>Jac mechanics proven in spikes: walkers auto-exposed as endpoints, abilities, impl blocks.</li>
+          <li><b>One live end-to-end run, <code>six-live-e2e</code>, on six models across six harnesses</b> — 6/6 effort receipts, none blocked, mocked or downgraded.</li>
+          <li>Five independent assessments, unedited on disk: <b>5/5 malicious</b>, confidence 0.85–0.95. All five named campaign stages 2, 3 and 4; Claude and Kimi independently added stage 6. Four of the five explicitly flag the planted prompt injection in the untrusted evidence.</li>
+          <li>The deterministic coordinator: score <b>4.54</b>, quorum met, not degraded, <code>contain: true</code> — plain Jac, no model.</li>
+          <li>The containment executor: <b>five actions applied, verified and rolled back</b>, <code>control_surface_after_rollback: []</code>, <code>final_state ROLLED_BACK</code>, health <code>pass</code>.</li>
+          <li>The Northwind gateway, domain walkers and Hermes detector — running, and the source of the live allow/deny probes. <b>40 of 40</b> bystanders kept serving during containment.</li>
+          <li>The vendored skills library, pinned to a commit, 817 skills. The full walkthrough: seventeen scenes, all voiced, all visuals in.</li>
         </ul>
       </div>
       <div class="stcol plan">
-        <div class="ch">Placeholder until the system lands</div>
+        <div class="ch">Still illustrative — and labelled as such</div>
         <ul>
-          <li>Every log line, verdict, confidence, timing and score shown on this page.</li>
-          <li>The incident-graph drawing — replaced by a capture of the live incident record.</li>
-          <li>The gateway and domain walkers, the Hermes detector, the coordinator vote logic, the containment executor, the responder harness wiring and the attack driver.</li>
-          <li>The per-responder weights and the score formula.</li>
-          <li>All scene visuals (<code>img/scene&lt;n&gt;.png|.mp4</code>). Narration audio (<code>scene&lt;n&gt;.mp3</code>) is done — all seventeen scenes are voiced.</li>
+          <li>The two request logs in beats 1 and 2, and the sample user rows in beat 7. The run they depict is real; those particular rows are hand-written.</li>
+          <li>The incident-graph drawing — still hand-drawn, not a capture of the live incident record.</li>
+          <li>The <b>per-responder weights and the exact score formula</b> — the one number in this design we have not fixed. The narration says so out loud, and we would rather say so than invent one.</li>
+          <li>The ▶ button on the demo tab animates the eight beats; it is a scripted preview of the sequence, not a re-execution.</li>
+          <li>Two recorded narration lines predate the live run — the four/one split in scene 15 and “Gemini 3.1 Pro” in scene 9. Both are corrected on screen where they occur.</li>
         </ul>
       </div>
     </div>

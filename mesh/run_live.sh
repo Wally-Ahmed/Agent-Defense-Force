@@ -158,10 +158,29 @@ logged() {
 # `-exec rm -rf {} +` rather than `| xargs`: BSD/macOS xargs still runs its
 # utility once when input is empty, so `xargs rm -rf` would fire a bare `rm -rf`.
 # `-prune` stops find descending into a directory it is about to delete.
+#
+# SCOPE: `.jac/cache` ONLY, never the whole `.jac` directory. `.jac/data` next
+# to it holds jac-scale's SQLite anchor store -- the app's live graph. This
+# function is called again mid-run (phase_escalate), and deleting the store out
+# from under a running `jac start` corrupts the graph the benign phase still
+# needs. The graph is reset exactly once, deliberately, in phase_app_gateway.
 # ---------------------------------------------------------------------------
 clear_jac_caches() {
+  # `\;` not `+` here: with `+` the `{}` must be the final argument, so the
+  # `/cache` suffix would not be appended to each match.
   find "$REPO_ROOT" -type d -name .jac -not -path "$REPO_ROOT/vendor/*" \
-    -prune -exec rm -rf {} + 2>/dev/null || true
+    -prune -exec rm -rf "{}/cache" \; 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Reset the app's graph to a known-empty world. Separate from the cache wipe
+# because it must happen exactly once, before the app starts, and never while
+# it is running. jac-scale resolves `[plugins.scale.database] shelf_db_path`
+# (default `.jac/data/anchor_store.db`) against the PROCESS CWD, and the app is
+# started with cwd=$REPO_ROOT, so this is the store it will open.
+# ---------------------------------------------------------------------------
+reset_app_graph() {
+  rm -rf "$REPO_ROOT/.jac/data" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -342,68 +361,32 @@ phase_up() {
 phase_app_gateway() {
   clear_jac_caches
 
-  # UPSTREAM SELECTION. `jac start app/main.jac` is what app/main.jac documents,
-  # but `jac start` refuses to run without a jac.toml project file and this repo
-  # has none at its root (only spikes/spike1/jac.toml). So the real app cannot
-  # currently be served. gateway/upstream_stub.jac is the repo's only working
-  # upstream -- it is what gateway/tests/verify.sh boots for its 40 checks.
-  #
-  # This is a REAL LIMITATION, recorded rather than hidden: with the stub the
-  # attack exercises the gateway's auth/ctx/audit path but not the app's
-  # walkers. The moment a root jac.toml lands, the real app is preferred
-  # automatically and no edit here is needed.
-  if [ -f "$REPO_ROOT/jac.toml" ]; then
+  # UPSTREAM SELECTION. The real app + gateway is the preferred upstream and is
+  # attempted FIRST, every run. attack/mock_app.py remains only as a fallback
+  # for when that attempt fails, and a run that falls back says so loudly and
+  # records it under NOT_BUILT -- a mocked application under attack must never
+  # be reportable as a live one.
+  if start_real_app_gateway; then
     UPSTREAM_KIND="app+gateway"
-    info "starting app: jac start app/main.jac (port $APP_PORT)"
-    ( cd "$REPO_ROOT" && exec jac start app/main.jac --port "$APP_PORT" ) \
-      >>"$LOG_DIR/app.log" 2>&1 &
-    # bash 3.2 has no negative array index, so capture the pid in a scalar.
-    APP_PID=$!
-    STARTED_PIDS+=("$APP_PID")
-    wait_for_port "$APP_PORT" app \
-      || die "app never bound port $APP_PORT -- see $LOG_DIR/app.log"
-    info "app listening on $APP_PORT (pid $APP_PID)"
-
-    # cwd MUST be gateway/. From the repo root the top-level `app/` package
-    # shadows gateway/app.jac and main.jac dies with "cannot import name
-    # 'build_app' from 'app'". `exec` is equally load-bearing: without it $! is
-    # the SUBSHELL's pid, teardown kills only the subshell, and the real jac
-    # process survives still holding the port. (gateway/tests/verify.sh)
-    info "starting gateway: cd gateway && jac run main.jac (bind 127.0.0.1:$GATEWAY_PORT)"
-    ( cd "$REPO_ROOT/gateway" \
-        && GATEWAY_BIND="127.0.0.1:$GATEWAY_PORT" \
-           JAC_UPSTREAM="127.0.0.1:$APP_PORT" \
-           exec jac run main.jac ) >>"$LOG_DIR/gateway.log" 2>&1 &
-    GATEWAY_PID=$!
-    STARTED_PIDS+=("$GATEWAY_PID")
-    # /healthz, not a bare TCP probe: the gateway binds before it can serve, and
-    # it is the only component with a real readiness signal.
-    local i=0
-    while [ "$i" -lt 60 ]; do
-      if curl -sf "http://127.0.0.1:$GATEWAY_PORT/healthz" >/dev/null 2>&1; then break; fi
-      i=$((i + 1)); sleep 0.5
-    done
-    curl -sf "http://127.0.0.1:$GATEWAY_PORT/healthz" >/dev/null 2>&1 \
-      || die "gateway did not become healthy on $GATEWAY_PORT -- see $LOG_DIR/gateway.log"
-    info "gateway healthy on $GATEWAY_PORT (pid $GATEWAY_PID)"
     return 0
   fi
 
-  # FALLBACK, recorded rather than hidden. Two independent facts force it:
-  #  1. `jac start` refuses to run without a jac.toml and this repo has none at
-  #     its root (only spikes/spike1/jac.toml), so the real app cannot be served.
-  #  2. gateway/upstream_stub.jac is NOT a substitute here. It answers 200 to
-  #     everything, so the attack driver's contract assertions (403 on
-  #     INSUFFICIENT_ROLE, 404 on confidential/canary reads) all fail against it
-  #     -- measured: 14/35 expected==actual, 21 mismatch.
+  # The real path failed. Everything it started is already down (its own
+  # cleanup), so the ports are free for the mock.
+  #
+  # FALLBACK, recorded rather than hidden. gateway/upstream_stub.jac is NOT a
+  # substitute here: it answers 200 to everything, so the attack driver's
+  # contract assertions (403 on INSUFFICIENT_ROLE, 404 on confidential/canary
+  # reads) all fail against it -- measured: 14/35 expected==actual, 21 mismatch.
+  # It is a gateway-test fixture (gateway/tests/verify.sh) and is deliberately
+  # not on this path.
   # attack/mock_app.py is the driver's own documented target and implements the
   # frozen contract's decision order exactly, so the campaign's assertions are
   # genuinely evaluated. It writes NO audit log, which phase_escalate handles.
   UPSTREAM_KIND="mock_app"
-  warn "no jac.toml at the repo root: 'jac start app/main.jac' cannot run"
-  warn "the gateway+upstream_stub pair answers 200 to everything and fails the attack's contract assertions"
+  warn "the real app+gateway upstream did not come up -- see $LOG_DIR/app.log and $LOG_DIR/gateway.log"
   warn "falling back to attack/mock_app.py -- app walkers and the gateway are NOT exercised this run"
-  NOT_BUILT+=("real app+gateway path (no root jac.toml)")
+  NOT_BUILT+=("real app+gateway path (startup failed; see $LOG_DIR/app.log)")
   info "starting contract mock: attack/mock_app.py --port $GATEWAY_PORT"
   ( exec python3 "$REPO_ROOT/attack/mock_app.py" --host 127.0.0.1 --port "$GATEWAY_PORT" ) \
     >>"$LOG_DIR/app.log" 2>&1 &
@@ -412,6 +395,105 @@ phase_app_gateway() {
   wait_for_port "$GATEWAY_PORT" mock_app \
     || die "attack/mock_app.py never bound port $GATEWAY_PORT -- see $LOG_DIR/app.log"
   info "contract mock listening on $GATEWAY_PORT (pid $APP_PID)"
+}
+
+# ---------------------------------------------------------------------------
+# Bring up the REAL upstream: `jac start app/main.jac` behind gateway/main.jac.
+# Returns 0 when both are healthy and the sandbox fixture world is seeded,
+# non-zero otherwise. It never calls die() -- a failure here is a fallback, not
+# an abort -- and it tears down anything it started before returning non-zero
+# so the mock can claim the same ports.
+# ---------------------------------------------------------------------------
+start_real_app_gateway() {
+  if [ ! -f "$REPO_ROOT/jac.toml" ]; then
+    warn "no jac.toml at the repo root: 'jac start app/main.jac' cannot run"
+    return 1
+  fi
+  if [ ! -x "$REPO_ROOT/attack/sandbox_up.sh" ]; then
+    warn "attack/sandbox_up.sh missing or not executable -- the app would serve an empty graph"
+    return 1
+  fi
+
+  # Known-empty world, exactly once, before anything opens the store.
+  reset_app_graph
+
+  # `-n` (--no_client) because this project ships no client bundle; without it
+  # `jac start` tries to build one. There is no --host flag (jfast_api binds
+  # 0.0.0.0 unconditionally), which is precisely why the gateway HMAC-signs the
+  # request context instead of trusting the network.
+  info "starting app: jac start app/main.jac (port $APP_PORT)"
+  ( cd "$REPO_ROOT" && exec jac start app/main.jac --port "$APP_PORT" -n ) \
+    >>"$LOG_DIR/app.log" 2>&1 &
+  # bash 3.2 has no negative array index, so capture the pid in a scalar.
+  APP_PID=$!
+  STARTED_PIDS+=("$APP_PID")
+  if ! wait_for_port "$APP_PORT" app 120; then
+    warn "app never bound port $APP_PORT -- see $LOG_DIR/app.log"
+    kill "$APP_PID" 2>/dev/null || true
+    return 1
+  fi
+  local i=0
+  while [ "$i" -lt 120 ]; do
+    if curl -sf "http://127.0.0.1:$APP_PORT/healthz" >/dev/null 2>&1; then break; fi
+    i=$((i + 1)); sleep 0.5
+  done
+  if ! curl -sf "http://127.0.0.1:$APP_PORT/healthz" >/dev/null 2>&1; then
+    warn "app bound $APP_PORT but never became healthy -- see $LOG_DIR/app.log"
+    kill "$APP_PID" 2>/dev/null || true
+    return 1
+  fi
+  info "app healthy on $APP_PORT (pid $APP_PID)"
+
+  # Seed the AUTHORIZED SYNTHETIC SANDBOX. The app ships no seed data, no demo
+  # tenant and no bootstrap endpoint -- app/main.jac guarantees that and still
+  # does. The fixture world attack/driver.py attacks is therefore written from
+  # OUTSIDE the served process, by attack/sandbox_up.sh, into the same anchor
+  # store. It also mints the short-lived jac-scale account whose bearer the
+  # gateway presents to the upstream transport, and prints only that bearer on
+  # stdout -- never a password, never a key.
+  local bearer=""
+  if ! bearer="$( "$REPO_ROOT/attack/sandbox_up.sh" \
+                    --base-url "http://127.0.0.1:$APP_PORT" \
+                    2>>"$LOG_DIR/app.log" )"; then
+    warn "attack/sandbox_up.sh failed to seed the sandbox -- see $LOG_DIR/app.log"
+    kill "$APP_PID" 2>/dev/null || true
+    return 1
+  fi
+  if [ -z "$bearer" ]; then
+    warn "attack/sandbox_up.sh returned no upstream bearer -- see $LOG_DIR/app.log"
+    kill "$APP_PID" 2>/dev/null || true
+    return 1
+  fi
+  info "sandbox seeded; upstream transport credential minted (value not logged)"
+
+  # cwd MUST be gateway/. From the repo root the top-level `app/` package
+  # shadows gateway/app.jac and main.jac dies with "cannot import name
+  # 'build_app' from 'app'". `exec` is equally load-bearing: without it $! is
+  # the SUBSHELL's pid, teardown kills only the subshell, and the real jac
+  # process survives still holding the port. (gateway/tests/verify.sh)
+  info "starting gateway: cd gateway && jac run main.jac (bind 127.0.0.1:$GATEWAY_PORT)"
+  ( cd "$REPO_ROOT/gateway" \
+      && GATEWAY_BIND="127.0.0.1:$GATEWAY_PORT" \
+         JAC_UPSTREAM="127.0.0.1:$APP_PORT" \
+         JAC_UPSTREAM_BEARER="$bearer" \
+         exec jac run main.jac ) >>"$LOG_DIR/gateway.log" 2>&1 &
+  GATEWAY_PID=$!
+  STARTED_PIDS+=("$GATEWAY_PID")
+  # /healthz, not a bare TCP probe: the gateway binds before it can serve, and
+  # it is the only component with a real readiness signal.
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if curl -sf "http://127.0.0.1:$GATEWAY_PORT/healthz" >/dev/null 2>&1; then break; fi
+    i=$((i + 1)); sleep 0.5
+  done
+  if ! curl -sf "http://127.0.0.1:$GATEWAY_PORT/healthz" >/dev/null 2>&1; then
+    warn "gateway did not become healthy on $GATEWAY_PORT -- see $LOG_DIR/gateway.log"
+    kill "$GATEWAY_PID" 2>/dev/null || true
+    kill "$APP_PID" 2>/dev/null || true
+    return 1
+  fi
+  info "gateway healthy on $GATEWAY_PORT (pid $GATEWAY_PID)"
+  return 0
 }
 
 # ---------------------------------------------------------------------------

@@ -91,7 +91,11 @@ async def walker(request: Any) -> Any {
     }
 
     # From here the ctx is trusted.
-    if name == "LoginUser" {
+    # Both names: the gateway POSTs to the archetype the APP serves ("Login"),
+    # while the contract calls the same walker "LoginUser". The stub answers to
+    # either so it doubles for the app regardless of which side is being
+    # exercised. See config.WALKER_ARCHETYPE.
+    if name == "LoginUser" or name == "Login" {
         users = _fixture_users();
         email = str(body.get("email", ""));
         password = str(body.get("password", ""));

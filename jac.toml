@@ -1,9 +1,58 @@
+# Root Jac project file. Its only job is to let `jac start app/main.jac` run --
+# jac refuses to start a server without one. Nothing here configures security:
+# the app's trust boundary is the HMAC over ReqCtx (contracts/req_ctx_contract.jac),
+# and every key below is inert with respect to authorization.
+#
+# The [dependencies.npm] blocks are NOT hand-authored preferences: `jac start`
+# rewrites this file to add each one on first boot if it is absent (it strips
+# comments below the block it touches when it does). They are pinned here so a
+# live run never mutates the repo mid-run. The server is started with `-n`
+# (--no_client) because this project serves no client bundle -- the API is driven
+# by the gateway and attack/driver.py.
+
 [project]
 name = "jachackssf-2026"
 version = "0.1.0"
 description = "Six-model agentic incident-response mesh over a guarded Jac app"
 
 [plugins]
+
+# ---------------------------------------------------------------------------
+# jac-scale hardening. These three keys are NOT tuning -- they exist because
+# turning `jac start` on turns jac-scale's framework defaults on with it, and
+# three of those defaults are hardcoded credentials. Verified against
+# jac_scale 0.2.13 `impl/config_loader.impl.jac`. Leaving them at their
+# defaults would put a known-password admin account on the served app, which
+# is exactly the class of thing this project exists to rule out.
+# ---------------------------------------------------------------------------
+
+# Default: enabled=true, which bootstraps a user `admin` with password
+# `changeme` at first boot and mounts an /admin portal. Off. The app has no
+# admin surface, and a default-password account is a hardcoded credential
+# whatever it is called.
+[plugins.scale.admin]
+enabled = false
+
+# Default: secret = "supersecretkey_for_testing_only!" (jac_scale
+# `impl/config_loader.impl.jac:122`, with no environment override of its own).
+# This key signs the bearer JWT that authenticates a caller to jac-scale's own
+# transport layer.
+#
+# `${VAR}` is resolved by jaclang's `interpolate_env_vars`
+# (jaclang/project/impl/config.impl.jac:33) and RAISES when the variable is
+# absent, so the app cannot start with the built-in default. Verified both ways.
+# Do NOT write `${VAR:?message}` here: the `:?` form is not parsed, the whole
+# string is then taken LITERALLY, and the literal silently becomes the signing
+# key -- i.e. a hardcoded credential committed to the repo. That mistake was
+# made and caught here; leave the plain form alone.
+[plugins.scale.jwt]
+secret = "${APP_JWT_SIGNING_KEY}"
+
+# Default: system_user_password = "system_secret" (config_loader.impl.jac:319),
+# the password of the `__system__` account scheduled jobs run as. Same rules as
+# above.
+[plugins.scale.scheduler]
+system_user_password = "${APP_SESSION_SECRET}"
 
 [dependencies.npm]
 react = "^18.2.0"

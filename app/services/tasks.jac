@@ -3,7 +3,7 @@
 # THE SHAPE EVERY WALKER IN app/services/ HAS, in this order (see
 # app/services/projects.jac for the full explanation of why):
 #
-#   1. guard(ReqCtx(**self.ctx), action, target_kind, tenant_id, target_id)
+#   1. guard(ctx_from(self.ctx), action, target_kind, tenant_id, target_id)
 #      -- the FIRST executable statement, no exceptions.
 #   2. open_scope()  -- re-read the Membership from the graph (defence in depth)
 #   3. the operation's own role floor from contracts/app_api.md
@@ -32,6 +32,7 @@
 # `‡` gate below and the `effective_sensitivity` response field use it.
 
 import from contracts.req_ctx_contract { ReqCtx, Grant, guard }
+import from app.security.reqctx { ctx_from }
 import from app.model.graph { Project, Task, Contains }
 import from app.model.resolve { comments_of, memberships_of }
 import from app.security.clock { now_ms }
@@ -97,13 +98,13 @@ walker:priv CreateTask {
     has labels: list = [];
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "task.create", "task", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "task.create", "task", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -200,13 +201,13 @@ walker:priv ListTasks {
     has assignee_user_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "task.list", "task", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "task.list", "task", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -286,13 +287,13 @@ walker:priv ReadTask {
     has task_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "task.read", "task", self.tenant_id, self.task_id);
+        g = guard(ctx_from(self.ctx), "task.read", "task", self.tenant_id, self.task_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -339,13 +340,13 @@ walker:priv UpdateTask {
     has labels: list = [];
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "task.update", "task", self.tenant_id, self.task_id);
+        g = guard(ctx_from(self.ctx), "task.update", "task", self.tenant_id, self.task_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -419,13 +420,13 @@ walker:priv DeleteTask {
     has task_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "task.delete", "task", self.tenant_id, self.task_id);
+        g = guard(ctx_from(self.ctx), "task.delete", "task", self.tenant_id, self.task_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -479,13 +480,13 @@ walker:priv AssignTask {
     has assignee_user_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "task.assign", "task", self.tenant_id, self.task_id);
+        g = guard(ctx_from(self.ctx), "task.assign", "task", self.tenant_id, self.task_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;

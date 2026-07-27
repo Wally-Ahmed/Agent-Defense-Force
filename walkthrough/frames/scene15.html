@@ -1,0 +1,129 @@
+<meta charset="utf-8">
+<title>scene15 — publish once, five sealed returns</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .main{display:grid;grid-template-columns:240px 32px 1fr;gap:16px;align-items:stretch}
+
+  .pub{display:flex;flex-direction:column;gap:7px;padding:13px 16px;border-radius:15px;
+       background:linear-gradient(168deg,rgba(248,153,255,.13) 0%,var(--panel2) 100%);
+       border:1px solid rgba(248,153,255,.6);box-shadow:0 0 0 1px rgba(248,153,255,.10),0 16px 32px -24px #000}
+  .pub .who{font-size:21px;font-weight:850;letter-spacing:-.01em;color:var(--hermes)}
+  .pub .k{font-family:var(--mono);font-size:15px;color:var(--text)}
+  .pub .d{font-family:var(--mono);font-size:15px;color:var(--dim2)}
+  .pub .only{font-size:15.5px;line-height:1.28;color:#ffd2ff;font-weight:700}
+
+  .gut{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+  .gut .vs{writing-mode:vertical-rl;font-size:13px;font-weight:850;letter-spacing:.24em;color:var(--line2);white-space:nowrap}
+
+  .lanes{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .lhead,.lane{display:grid;
+    grid-template-columns:16px 210px 274px 1fr 16px 118px 62px 88px 100px;gap:10px;align-items:center}
+  .lhead{padding:0 15px;font-size:15px;font-weight:800;letter-spacing:.055em;text-transform:uppercase;color:var(--dim2)}
+  .lhead .r{text-align:right}
+  .lhead .c{text-align:center}
+
+  .lane{min-height:45px;padding:0 14px;border-radius:12px;
+        border:1px solid color-mix(in srgb, var(--mc) 52%, transparent);
+        background:linear-gradient(168deg, color-mix(in srgb, var(--mc) 10%, var(--panel)) 0%, var(--panel2) 100%);
+        box-shadow:0 0 0 1px color-mix(in srgb, var(--mc) 12%, transparent)}
+  .lane .in{color:var(--hermes);font-size:17px;font-weight:850;text-shadow:0 0 10px rgba(248,153,255,.7)}
+  .lane .nm{font-family:var(--mono);font-size:16px;font-weight:750;color:var(--mc)}
+  .lane .md{font-family:var(--mono);font-size:15px;color:var(--dim);white-space:nowrap}
+  .lane .ch{display:flex;align-items:center;gap:7px;min-width:0}
+  .lane .ch b{font-family:var(--mono);font-size:15px;font-weight:650;color:var(--dim2)}
+  .lane .ch .ln{flex:1;height:2px;border-radius:1px;
+       background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--mc) 85%, transparent))}
+  .lane .ch .ar{color:var(--mc);font-size:14px;line-height:1}
+  .lane .mk{width:12px;height:12px;border-radius:50%;background:var(--mc);box-shadow:0 0 12px var(--mc);justify-self:center}
+  .lane .vd{display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);
+       font-size:15.5px;font-weight:750;padding:5px 0;border-radius:8px;
+       background:rgba(255,81,74,.15);border:1px solid rgba(255,81,74,.66);color:#ffc6c2}
+  .lane .cf{font-family:var(--mono);font-size:21px;font-weight:850;color:var(--mc);text-align:right;letter-spacing:-.02em}
+  .lane .zb{position:relative;height:10px;border-radius:5px;background:rgba(255,255,255,.075)}
+  .lane .zb > i{display:block;height:100%;border-radius:5px;background:var(--mc);box-shadow:0 0 11px var(--mc)}
+  .lane .ac{font-family:var(--mono);font-size:15px;color:var(--dim);text-align:right}
+
+  .foot15{display:flex;align-items:center;gap:14px}
+</style>
+
+<div class="stage" style="gap:12px">
+
+  <div class="row c" style="gap:14px">
+    <div class="kick cool">Beat 5 · publish once, five sealed returns</div>
+    <!-- Only responder_claude reported skills_used[]; the other four returned []. Say so. -->
+    <div class="chip mono">skills_used · claude 2 · others 0</div>
+    <div class="spacer"></div>
+    <div class="chip badc"><span class="dot"></span>verdict: unanimous 5/5 malicious</div>
+  </div>
+
+  <div class="main">
+
+    <div class="pub">
+      <div class="who">HERMES</div>
+      <div class="k">publish × 1</div>
+      <div class="rule"></div>
+      <div class="d">sec.incident</div>
+      <div class="k">inc-2026-07-26-live01</div>
+      <div class="rule"></div>
+      <div class="d">fan-out → 5 lanes</div>
+      <div class="spacer"></div>
+      <div class="only">the only thing Hermes is allowed to write</div>
+    </div>
+
+    <div class="gut">
+      <div class="vrule" style="opacity:.45"></div>
+      <div class="vs">NO CROSS-LANE PATH</div>
+      <div class="vrule" style="opacity:.45"></div>
+    </div>
+
+    <div class="lanes">
+      <div class="lhead">
+        <span></span><span>responder</span><span>model</span><span>direct return</span>
+        <span></span><span class="c">verdict</span><span class="r">conf</span><span class="c">0.90–1.00</span><span class="r">proposed</span>
+      </div>
+
+      <div class="lane m1">
+        <span class="in">▸</span><span class="nm">responder_claude</span><span class="md">anthropic/claude-opus-5</span>
+        <span class="ch"><b>sec.dm</b><span class="ln"></span><span class="ar">▶</span></span>
+        <span class="mk"></span><span class="vd">malicious</span><span class="cf">0.93</span>
+        <span class="zb"><i style="width:30%"></i></span><span class="ac">8 actions</span>
+      </div>
+
+      <div class="lane m2">
+        <span class="in">▸</span><span class="nm">responder_codex</span><span class="md">openai/gpt-5.6-sol</span>
+        <span class="ch"><b>sec.dm</b><span class="ln"></span><span class="ar">▶</span></span>
+        <span class="mk"></span><span class="vd">malicious</span><span class="cf">0.99</span>
+        <span class="zb"><i style="width:90%"></i></span><span class="ac">6 actions</span>
+      </div>
+
+      <div class="lane m3">
+        <span class="in">▸</span><span class="nm">responder_antigravity</span><span class="md">google/gemini-3.1-pro-preview</span>
+        <span class="ch"><b>sec.dm</b><span class="ln"></span><span class="ar">▶</span></span>
+        <span class="mk"></span><span class="vd">malicious</span><span class="cf">0.95</span>
+        <span class="zb"><i style="width:50%"></i></span><span class="ac">3 actions</span>
+      </div>
+
+      <div class="lane m4">
+        <span class="in">▸</span><span class="nm">responder_kimi</span><span class="md">moonshotai/kimi-k3</span>
+        <span class="ch"><b>sec.dm</b><span class="ln"></span><span class="ar">▶</span></span>
+        <span class="mk"></span><span class="vd">malicious</span><span class="cf">0.95</span>
+        <span class="zb"><i style="width:50%"></i></span><span class="ac">6 actions</span>
+      </div>
+
+      <div class="lane m5">
+        <span class="in">▸</span><span class="nm">responder_glm</span><span class="md">z-ai/glm-5.2</span>
+        <span class="ch"><b>sec.dm</b><span class="ln"></span><span class="ar">▶</span></span>
+        <span class="mk"></span><span class="vd">malicious</span><span class="cf">0.93</span>
+        <span class="zb"><i style="width:30%"></i></span><span class="ac">7 actions</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot15">
+    <div class="banner warm" style="flex:none">they will not agree perfectly. <em>that is the design working.</em></div>
+    <div class="chip mono">spread 0.06 · proposals 3 → 8</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="prov">REAL · runs/six-live/assessments/*.json</div>
+</div>

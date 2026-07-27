@@ -37,6 +37,23 @@ def _tag(secret: str, value: str) -> str {
     return hmac.new(secret.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()[:32];
 }
 
+"""Stable, non-reversible handle for an API bearer token.
+
+    token_handle(secret) == "tok_" + sha256(secret).hexdigest()[:16]
+
+This is the ONLY derivation of a token identity in the system, and both sides of
+the trust boundary must compute it identically: the gateway stamps the handle
+into the signed ctx as `token_id`, the app looks a token record up by the same
+handle. An unkeyed sha256 (not the HMAC `_tag` above) is deliberate — a keyed tag
+would need the gateway's session secret to travel to the app.
+
+The handle is the ONLY thing derived from the token that is allowed to leave this
+function's caller: the raw secret is never forwarded upstream, never logged, and
+never written to the audit sink."""
+def token_handle(secret: str) -> str {
+    return "tok_" + hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16];
+}
+
 """Render a Set-Cookie header value. `max_age` of 0 clears the cookie."""
 def set_cookie_value(name: str, value: str, attrs: str, max_age: int) -> str {
     return f"{name}={value}; {attrs}; Max-Age={max_age}";

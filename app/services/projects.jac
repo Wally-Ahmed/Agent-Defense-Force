@@ -2,7 +2,7 @@
 #
 # THE SHAPE EVERY WALKER IN app/services/ HAS, in this order:
 #
-#   1. guard(ReqCtx(**self.ctx), action, target_kind, tenant_id, target_id)
+#   1. guard(ctx_from(self.ctx), action, target_kind, tenant_id, target_id)
 #      -- the FIRST executable statement, no exceptions. guard() verifies the
 #      ctx signature, the credential, containment controls, membership and the
 #      action's minimum role, resolves the target by traversal, and emits the
@@ -28,6 +28,7 @@
 # from the dict inside.
 
 import from contracts.req_ctx_contract { ReqCtx, Grant, guard }
+import from app.security.reqctx { ctx_from }
 import from app.model.graph { Project, Owns }
 import from app.model.resolve { projects_of, tasks_of }
 import from app.security.clock { now_ms }
@@ -79,13 +80,13 @@ walker:priv CreateProject {
     has sensitivity: str = "normal";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "project.create", "project", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "project.create", "project", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -157,13 +158,13 @@ walker:priv ListProjects {
     has sort: str = "updated_at";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "project.list", "project", self.tenant_id, "");
+        g = guard(ctx_from(self.ctx), "project.list", "project", self.tenant_id, "");
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -223,13 +224,13 @@ walker:priv ReadProject {
     has project_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "project.read", "project", self.tenant_id, self.project_id);
+        g = guard(ctx_from(self.ctx), "project.read", "project", self.tenant_id, self.project_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -266,13 +267,13 @@ walker:priv UpdateProject {
     has sensitivity: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "project.update", "project", self.tenant_id, self.project_id);
+        g = guard(ctx_from(self.ctx), "project.update", "project", self.tenant_id, self.project_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;
@@ -332,13 +333,13 @@ walker:priv DeleteProject {
     has project_id: str = "";
 
     can go with entry {
-        g = guard(ReqCtx(**self.ctx), "project.delete", "project", self.tenant_id, self.project_id);
+        g = guard(ctx_from(self.ctx), "project.delete", "project", self.tenant_id, self.project_id);
         rid = self.ctx.get("request_id", "");
         if not g.ok {
             report deny(g.reason, rid);
             disengage;
         }
-        sr = open_scope(g, ReqCtx(**self.ctx), self.tenant_id);
+        sr = open_scope(g, ctx_from(self.ctx), self.tenant_id);
         if sr.scope is None {
             report deny(sr.reason, rid);
             disengage;

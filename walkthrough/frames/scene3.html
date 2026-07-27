@@ -3,55 +3,55 @@
 <link rel="stylesheet" href="kit.css">
 <style>
   .stage{gap:14px}
-  .head{display:flex;align-items:center;gap:14px}
+  .head{display:flex;align-items:center;gap:14px;height:30px;flex:none}
+  .head > *{white-space:nowrap}
 
   .mid{display:flex;gap:24px;flex:1;min-height:0;align-items:stretch}
 
   /* --- count card --- */
-  .count{width:398px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:7px;padding:14px 22px}
-  .count .n{font-size:96px;font-weight:850;letter-spacing:-.05em;line-height:.9;color:var(--m1)}
-  .count .cap{font-size:19px;font-weight:800;letter-spacing:.02em;color:var(--text)}
-  .count .meta{font-family:var(--mono);font-size:15.5px;line-height:1.42;color:var(--dim2)}
-  .count .meta b{color:var(--dim);font-weight:650}
+  .count{width:392px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:14px 22px}
+  .count .n{font-size:88px;font-weight:850;letter-spacing:-.05em;line-height:.9;color:var(--m1)}
+  .count .cap{font-size:19px;font-weight:800;letter-spacing:.02em;color:var(--text);white-space:nowrap}
   .lic{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
        font-family:var(--mono);font-size:15px;font-weight:700;padding:5px 11px;border-radius:8px;
        background:rgba(68,255,255,.10);border:1px solid rgba(68,255,255,.42);color:#bdf6ff}
 
   /* --- disclaimer: the load-bearing element of this frame --- */
-  .disc{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:12px;
-        padding:20px 30px;border-radius:16px;
+  .discwrap{flex:1;min-width:0;position:relative;display:flex}
+  .disc{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:10px;
+        padding:18px 30px;border-radius:16px;
         background:linear-gradient(168deg,rgba(255,215,53,.10) 0%,rgba(255,140,26,.06) 100%);
         border:2px solid var(--warn);
         box-shadow:0 0 0 1px rgba(255,215,53,.16), 0 18px 40px -26px #000}
-  .disc .big{font-size:41px;font-weight:850;letter-spacing:-.02em;line-height:1.08;color:#fff3bd}
+  .disc .big{font-size:38px;font-weight:850;letter-spacing:-.02em;line-height:1.06;color:#fff3bd}
   .disc .big em{font-style:normal;color:var(--warn)}
-  .disc .sub{font-size:17px;line-height:1.42;color:var(--dim);max-width:960px}
+  .disc .sub{font-size:16.5px;line-height:1.4;color:var(--dim)}
   .disc .sub b{color:var(--text);font-weight:750}
   .disc .tag{position:absolute;top:-11px;left:26px;font-family:var(--mono);font-size:13px;font-weight:800;
              letter-spacing:.16em;padding:2px 10px;border-radius:6px;background:#241c16;
              border:1px solid var(--warn);color:var(--warn)}
-  .discwrap{flex:1;min-width:0;position:relative;display:flex}
 
   /* --- skills_used inset --- */
-  .inset{padding:12px 12px 13px}
-  .inset .ttl{display:flex;align-items:center;gap:12px;margin-bottom:9px;padding-left:7px}
+  .inset{padding:12px 14px 13px;flex:none}
+  .inset .ttl{display:flex;align-items:center;gap:12px;margin-bottom:9px}
   .inset .ttl .k{font-family:var(--mono);font-size:15.5px;font-weight:800;color:var(--accent2)}
   .inset .ttl .w{font-size:15px;font-weight:700;color:var(--dim2);letter-spacing:.02em}
-  .su{display:grid;grid-template-columns:1fr max-content;gap:0 14px;align-items:center;
-      font-family:var(--mono);font-size:15.5px;line-height:1;padding:5px 7px;border-radius:7px;
-      background:rgba(30,202,255,.055);border:1px solid rgba(30,202,255,.20);margin-top:5px}
-  .su .p{color:var(--text);white-space:nowrap}
-  .su .s{color:var(--dim2);white-space:nowrap}
+  .su{padding:6px 12px;border-radius:8px;margin-top:5px;
+      background:rgba(30,202,255,.055);border:1px solid rgba(30,202,255,.22);
+      font-family:var(--mono);font-size:15.5px;line-height:1}
+  .su .p{display:block;color:var(--text);white-space:nowrap}
+  .su .s{display:block;color:var(--dim2);white-space:nowrap;margin-top:5px}
+  .su .s i{font-style:normal;color:var(--accent2);font-weight:800;margin-right:9px}
 </style>
 
 <div class="stage">
 
   <div class="head">
-    <div class="kick cool">Beat 2 · the library every responder loads</div>
-    <div class="chip mono cool">vendor/cybersecurity-skills</div>
+    <div class="kick cool">Beat 2 · the skills library</div>
     <div class="chip mono on">pinned @673da1f</div>
+    <div class="chip mono cool">index.json v1.1.0</div>
     <div class="spacer"></div>
-    <div class="sm mono">index.json v1.1.0 · generated 2026-06-26</div>
+    <div class="sm mono">github.com/mukul975/Anthropic-Cybersecurity-Skills</div>
   </div>
 
   <div class="mid">
@@ -59,15 +59,14 @@
       <div class="n">817</div>
       <div class="cap">cybersecurity skills, vendored</div>
       <div class="lic">Apache-2.0</div>
-      <div class="meta">github.com/<b>mukul975</b>/<br>Anthropic-Cybersecurity-Skills</div>
     </div>
 
     <div class="discwrap">
       <div class="disc">
         <div class="tag">CREDIT</div>
         <div class="big">Community-maintained.<br><em>Not an official Anthropic release.</em></div>
-        <div class="sub">Published by <b>mukul975</b> under <b>Apache-2.0</b> and vendored here at one frozen
-          commit so every run is reproducible. The repository name invites the wrong assumption —
+        <div class="sub">Published by <b>mukul975</b> under <b>Apache-2.0</b> and vendored here at one frozen commit,
+          so every run is reproducible. The repository name invites the wrong assumption —
           <b>we do not present it as one.</b> Nothing in it is endorsed, reviewed or shipped by Anthropic.</div>
       </div>
     </div>
@@ -76,15 +75,15 @@
   <div class="inset card flat">
     <div class="ttl">
       <span class="k">skills_used[]</span>
-      <span class="w">responder_claude · assessment.v1 · path + content hash of every skill actually loaded</span>
+      <span class="w">responder_claude · assessment.v1 — the path and content hash of every skill it actually loaded</span>
     </div>
     <div class="su">
       <span class="p">vendor/cybersecurity-skills/skills/containing-active-breach/SKILL.md</span>
-      <span class="s">3e8883aa791d03627ede727ad1aade638954169ff88d7c7243a46f6013624bdc</span>
+      <span class="s"><i>sha256</i>3e8883aa791d03627ede727ad1aade638954169ff88d7c7243a46f6013624bdc</span>
     </div>
     <div class="su">
       <span class="p">vendor/cybersecurity-skills/skills/detecting-indirect-prompt-injection/SKILL.md</span>
-      <span class="s">5d3ff2354f45e2c1012c6af8105c6588b501bfd05c564d9027ea853bfad2c5bf</span>
+      <span class="s"><i>sha256</i>5d3ff2354f45e2c1012c6af8105c6588b501bfd05c564d9027ea853bfad2c5bf</span>
     </div>
   </div>
 

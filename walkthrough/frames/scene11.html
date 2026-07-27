@@ -3,55 +3,62 @@
 <link rel="stylesheet" href="kit.css">
 <style>
   .stage{gap:13px}
-  .head{display:flex;align-items:baseline;gap:14px}
-  .head .h2{font-size:31px}
+  .head{display:flex;align-items:center;gap:14px;height:36px;flex:none}
+  .head > *{white-space:nowrap}
+  .head .h2{font-size:31px;line-height:1}
 
   .body{display:flex;gap:22px;flex:1;min-height:0;align-items:stretch}
 
   /* ---- the ten kinds ---- */
-  .tab{width:786px;flex:none;padding:11px 14px 12px;display:flex;flex-direction:column;gap:2.5px}
-  .khead,.krow{display:grid;grid-template-columns:14px 246px 88px 84px 1fr;gap:12px;align-items:center}
-  .khead{height:16px;font-size:12.5px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--dim2)}
-  .krow{height:26px;padding:0 8px;border-radius:6px;font-family:var(--mono);font-size:15.5px;line-height:1;
-        background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05)}
-  .krow .d{width:8px;height:8px;border-radius:50%;background:var(--line2);justify-self:center}
-  .krow .k{color:var(--dim);font-weight:700;white-space:nowrap}
-  .krow .t{color:var(--dim2);white-space:nowrap}
-  .krow .b{color:var(--dim2);white-space:nowrap}
-  .krow .a{color:var(--dim2);white-space:nowrap;font-size:15.5px}
-  .krow.lit{background:rgba(38,231,155,.11);border-color:rgba(38,231,155,.5)}
-  .krow.lit .d{background:var(--win);box-shadow:0 0 10px var(--win)}
-  .krow.lit .k{color:#c7ffe8;font-weight:800}
-  .krow.lit .t{color:var(--win)}
-  .krow.lit .b,.krow.lit .a{color:#8dedc4}
-  .krow.hum{background:rgba(255,215,53,.085);border-color:rgba(255,215,53,.42)}
-  .krow.hum .d{background:var(--warn);box-shadow:0 0 10px var(--warn)}
-  .krow.hum .k{color:#fff0b0;font-weight:800}
-  .krow.hum .a{color:var(--warn);font-weight:800}
+  .tab{width:828px;flex:none;padding:8px 13px 9px;display:flex;flex-direction:column;gap:2px}
+  .khead,.krow{display:grid;grid-template-columns:10px 240px 104px 86px 1fr;gap:11px;align-items:center}
+  .khead{height:18px;font-size:15px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+         color:var(--dim2);margin-bottom:4px}
+  .khead span{white-space:nowrap}
+  .krow{height:24px;padding:0 8px;border-radius:6px;font-family:var(--mono);font-size:15.5px;line-height:1;
+        background:rgba(255,255,255,.026);border:1px solid rgba(255,255,255,.055)}
+  .krow > span{white-space:nowrap}
+  .krow .d{width:7px;height:7px;border-radius:50%;background:var(--line2);justify-self:center}
+  .krow .k{color:var(--dim);font-weight:700}
+  .krow .t,.krow .b,.krow .a{color:var(--dim2)}
 
-  /* ---- right panel ---- */
-  .rp{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  /* chosen = actually applied in the live run. cool = the defensive mesh. */
+  .krow.lit{background:rgba(30,202,255,.135);border-color:rgba(30,202,255,.62)}
+  .krow.lit .d{background:var(--accent2);box-shadow:0 0 11px var(--accent2)}
+  .krow.lit .k{color:#dff6ff;font-weight:850}
+  .krow.lit .t{color:var(--accent2);font-weight:750}
+  .krow.lit .b,.krow.lit .a{color:#a9e4fb}
+  /* the one kind a human must sign for */
+  .krow.hum{background:rgba(255,215,53,.10);border-color:rgba(255,215,53,.5)}
+  .krow.hum .d{background:var(--warn);box-shadow:0 0 11px var(--warn)}
+  .krow.hum .k{color:#fff0b0;font-weight:850}
+  .krow.hum .a{color:var(--warn);font-weight:850}
+
+  /* ---- right column: plain vertical stack, no absolute positioning ---- */
+  .rp{flex:1;min-width:0;display:flex;flex-direction:column;gap:11px}
   .pnl{padding:9px 14px 11px;border-radius:12px;background:rgba(28,22,17,.72);border:1px solid var(--line)}
-  .pnl .lb{font-size:12.5px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--dim2);margin-bottom:7px}
+  .pnl.grow{flex:1;min-height:0;display:flex;flex-direction:column}
+  .pnl .lb{font-size:15px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--dim2);
+           margin-bottom:8px;white-space:nowrap}
+  .pnl .lb em{font-style:normal;color:var(--line2);letter-spacing:.02em}
   .st{display:flex;flex-wrap:wrap;gap:6px}
-  .st span{font-family:var(--mono);font-size:14.6px;font-weight:700;padding:3px 9px;border-radius:6px;
-           background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--dim2)}
-  .st span.on{background:rgba(38,231,155,.16);border-color:rgba(38,231,155,.62);color:#c7ffe8}
-  .rb{font-family:var(--mono);font-size:15.5px;line-height:1;color:var(--dim);
-      display:flex;align-items:center;gap:9px;padding:4px 0}
-  .rb b{font-weight:800;width:74px;flex:none}
-  .rb .rs{color:var(--win)} .rb .dl{color:var(--dim2)}
+  .st span{font-family:var(--mono);font-size:15px;font-weight:700;padding:3px 9px;border-radius:6px;
+           background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--dim2);white-space:nowrap}
+  .st span.on{background:rgba(30,202,255,.18);border-color:rgba(30,202,255,.68);color:#dff6ff;font-weight:850}
+  .rb{font-family:var(--mono);font-size:15.5px;line-height:1;display:flex;align-items:center;gap:10px;
+      padding:4px 0;white-space:nowrap}
+  .rb b{font-weight:800;width:70px;flex:none;color:var(--dim2)}
+  .rb b.rs{color:var(--accent2)}
   .rb .v{color:var(--text)}
-  .lifo{font-size:14.8px;color:var(--dim2);margin-top:5px;line-height:1.25}
-  .stats{display:flex;gap:9px}
-  .tile{flex:1;text-align:center;padding:6px 4px 7px;border-radius:10px;
-        background:rgba(255,255,255,.035);border:1px solid var(--line)}
-  .tile .n{font-size:29px;font-weight:850;letter-spacing:-.03em;line-height:1}
-  .tile .l{font-size:13px;font-weight:750;letter-spacing:.03em;color:var(--dim2);margin-top:3px;white-space:nowrap}
+  .clean{display:flex;align-items:center;gap:10px;margin-top:auto;padding:6px 11px;border-radius:8px;
+         background:rgba(30,202,255,.11);border:1px solid rgba(30,202,255,.5)}
+  .clean .c{font-family:var(--mono);font-size:15.5px;font-weight:800;color:#dff6ff;white-space:nowrap}
+  .clean .w{font-size:15px;font-weight:700;color:var(--dim2);white-space:nowrap}
+  .lifo{font-size:15px;color:var(--dim2);line-height:1.3;margin-top:7px}
 
-  .bot{display:flex;align-items:center;gap:14px}
-  .never{display:flex;align-items:center;gap:14px;padding:10px 22px;border-radius:12px;
-         background:rgba(255,81,74,.12);border:2px solid rgba(255,81,74,.72)}
+  .bot{display:flex;align-items:center;gap:14px;flex:none}
+  .never{display:flex;align-items:center;gap:13px;padding:10px 22px;border-radius:12px;
+         background:rgba(255,81,74,.12);border:2px solid rgba(255,81,74,.72);white-space:nowrap}
   .never .s{font-size:24px;font-weight:850;color:#ffb0ab;text-decoration:line-through;
             text-decoration-thickness:3px;text-decoration-color:var(--fail)}
   .never .n{font-size:24px;font-weight:850;color:var(--fail);letter-spacing:.02em}
@@ -62,10 +69,9 @@
   <div class="head">
     <div class="kick cool">Beat 5</div>
     <div class="h2">Ten containment kinds</div>
-    <div class="chip mono">CONTAINMENT_KINDS</div>
-    <div class="chip mono good">5 kinds · 8 controls applied live</div>
+    <div class="chip mono cool">lit = applied in the live run · 5 kinds · 8 controls</div>
     <div class="spacer"></div>
-    <div class="sm mono">every target: principal · session · token · source · one feature</div>
+    <div class="sm">target: a principal · a session · a token · a source · one feature</div>
   </div>
 
   <div class="body">
@@ -87,26 +93,23 @@
 
     <div class="rp">
       <div class="pnl">
-        <div class="lb">ContainmentAction.state — rolled_back is an ordinary state</div>
+        <div class="lb">ContainmentAction.state <em>— rolled_back is an ordinary state</em></div>
         <div class="st">
           <span>proposed</span><span>approved</span><span>applying</span><span>active</span>
           <span>verify_failed</span><span>expired</span><span class="on">rolled_back</span><span>failed</span>
         </div>
       </div>
 
-      <div class="pnl" style="flex:1;min-height:0">
+      <div class="pnl grow">
         <div class="lb">prior_state snapshot → rollback</div>
-        <div class="rb"><b class="dl">capture</b><span class="v">prior_state {} — taken before every apply</span></div>
+        <div class="rb"><b>capture</b><span class="v">prior_state {} before every apply</span></div>
         <div class="rb"><b class="rs">restored</b><span class="v">block_source ip:198.51.100.37 active=True</span></div>
-        <div class="rb"><b class="dl">deleted</b><span class="v">block_source ip:198.51.100.37</span></div>
-        <div class="lifo">LIFO — prior_state snapshots nest, so they unwind from the top.
-          <span class="win" style="font-weight:800">control_surface_after_rollback: [ ]</span></div>
-      </div>
-
-      <div class="stats">
-        <div class="tile"><div class="n win">8</div><div class="l">applied</div></div>
-        <div class="tile"><div class="n" style="color:var(--dim2)">0</div><div class="l">aborted</div></div>
-        <div class="tile"><div class="n hi2">900</div><div class="l">min_ttl_s</div></div>
+        <div class="rb"><b>deleted</b><span class="v">block_source ip:198.51.100.37</span></div>
+        <div class="lifo">LIFO — prior_state snapshots nest, so they unwind from the top.</div>
+        <div class="clean">
+          <span class="c">control_surface_after_rollback: [ ]</span>
+          <span class="w">nothing left behind</span>
+        </div>
       </div>
     </div>
   </div>
@@ -117,8 +120,8 @@
       <span class="n">— NOT AVAILABLE</span>
     </div>
     <div class="spacer"></div>
-    <div class="chip mono good">state_trace ends CONTAINED → ROLLED_BACK</div>
-    <div class="chip mono">no kind can name a whole tenant</div>
+    <div class="chip mono">8 applied · 0 aborted · min_ttl_s 900</div>
+    <div class="chip mono cool">state_trace ends CONTAINED → ROLLED_BACK</div>
   </div>
 
   <div class="prov">REAL · contracts/containment_contract.jac + runs/six-live/containment.json</div>

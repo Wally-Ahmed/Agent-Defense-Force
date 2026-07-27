@@ -76,33 +76,51 @@
         <line x1="1007" y1="42" x2="1033" y2="42"/>
       </g>
 
-      <!-- incident record drops onto the mesh -->
-      <line x1="1239" y1="84" x2="1239" y2="97" stroke="#1ecaff" stroke-width="3" marker-end="url(#ac)"/>
+      <!-- incident record drops onto the mesh (gap 84..100) -->
+      <line x1="1239" y1="85" x2="1239" y2="90" stroke="#1ecaff" stroke-width="3"/>
+      <path d="M1233.5,90 H1244.5 L1239,98 z" fill="#1ecaff"/>
 
-      <!-- mesh -> five responders (multicast on sec.incident) -->
-      <g stroke="#1ecaff" stroke-width="3" marker-end="url(#ac)">
-        <line x1="281.6"  y1="126" x2="281.6"  y2="137"/>
-        <line x1="540.8"  y1="126" x2="540.8"  y2="137"/>
-        <line x1="800"    y1="126" x2="800"    y2="137"/>
-        <line x1="1059.2" y1="126" x2="1059.2" y2="137"/>
-        <line x1="1318.4" y1="126" x2="1318.4" y2="137"/>
+      <!-- mesh -> five responders, multicast on sec.incident (gap 126..140) -->
+      <g stroke="#1ecaff" stroke-width="3">
+        <line x1="281.6"  y1="128" x2="281.6"  y2="132"/>
+        <line x1="540.8"  y1="128" x2="540.8"  y2="132"/>
+        <line x1="800"    y1="128" x2="800"    y2="132"/>
+        <line x1="1059.2" y1="128" x2="1059.2" y2="132"/>
+        <line x1="1318.4" y1="128" x2="1318.4" y2="132"/>
+      </g>
+      <g fill="#1ecaff">
+        <path d="M276.1,131.5  H287.1  L281.6,139.5 z"/>
+        <path d="M535.3,131.5  H546.3  L540.8,139.5 z"/>
+        <path d="M794.5,131.5  H805.5  L800,139.5 z"/>
+        <path d="M1053.7,131.5 H1064.7 L1059.2,139.5 z"/>
+        <path d="M1312.9,131.5 H1323.9 L1318.4,139.5 z"/>
       </g>
 
-      <!-- five separate DMs down to the coordinator -->
-      <g stroke="#d6c7b7" stroke-width="3" marker-end="url(#ad)">
-        <line x1="281.6"  y1="196" x2="281.6"  y2="207"/>
-        <line x1="540.8"  y1="196" x2="540.8"  y2="207"/>
-        <line x1="800"    y1="196" x2="800"    y2="207"/>
-        <line x1="1059.2" y1="196" x2="1059.2" y2="207"/>
-        <line x1="1318.4" y1="196" x2="1318.4" y2="207"/>
+      <!-- five separate DMs down to the coordinator (gap 196..210) -->
+      <g stroke="#d6c7b7" stroke-width="3">
+        <line x1="281.6"  y1="197" x2="281.6"  y2="201"/>
+        <line x1="540.8"  y1="197" x2="540.8"  y2="201"/>
+        <line x1="800"    y1="197" x2="800"    y2="201"/>
+        <line x1="1059.2" y1="197" x2="1059.2" y2="201"/>
+        <line x1="1318.4" y1="197" x2="1318.4" y2="201"/>
+      </g>
+      <g fill="#d6c7b7">
+        <path d="M276.1,200.5  H287.1  L281.6,208.5 z"/>
+        <path d="M535.3,200.5  H546.3  L540.8,208.5 z"/>
+        <path d="M794.5,200.5  H805.5  L800,208.5 z"/>
+        <path d="M1053.7,200.5 H1064.7 L1059.2,208.5 z"/>
+        <path d="M1312.9,200.5 H1323.9 L1318.4,208.5 z"/>
       </g>
 
-      <!-- coordinator forks to policy + audit -->
+      <!-- coordinator forks down to policy + audit (gap 254..270) -->
       <g stroke="#26e79b" stroke-width="3" fill="none">
-        <path d="M800,254 V262 H468.5" marker-end="url(#ag)"/>
-        <path d="M800,254 V262 H1131.5" marker-end="url(#ag)"/>
-        <line x1="468.5" y1="262" x2="468.5" y2="267" marker-end="url(#ag)"/>
-        <line x1="1131.5" y1="262" x2="1131.5" y2="267" marker-end="url(#ag)"/>
+        <path d="M800,254 V260"/>
+        <path d="M468.5,260 H1131.5"/>
+        <path d="M468.5,260 V261"/><path d="M1131.5,260 V261"/>
+      </g>
+      <g fill="#26e79b">
+        <path d="M463,260.5  H474  L468.5,268.5 z"/>
+        <path d="M1126,260.5 H1137 L1131.5,268.5 z"/>
       </g>
     </svg>
 

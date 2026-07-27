@@ -139,6 +139,25 @@ glob:pub DENY_MESSAGE: dict = {
 };
 
 # ---------------------------------------------------------------------------
+# jac-scale answers some requests at its own transport layer, before any walker
+# runs: `walker:priv` with an Authorization header it does not recognise yields
+# {"ok":false,"type":"error","data":null,...,"meta":{"extra":{"http_status":N}}}
+# with no report to read a reason out of. That envelope must never reach a
+# client, so the gateway restates the transport status as the contract deny
+# reason that carries it. Anything not on this table is an upstream the gateway
+# does not understand and becomes a 502, never a pass-through.
+# ---------------------------------------------------------------------------
+
+glob:pub TRANSPORT_DENY: dict = {
+    401: "NO_SESSION",
+    403: "INSUFFICIENT_ROLE",
+    404: "NOT_FOUND",
+    422: "VALIDATION_FAILED",
+    423: "READONLY_MODE",
+    429: "RATE_LIMITED"
+};
+
+# ---------------------------------------------------------------------------
 # Rate-limit budgets per route class. Transcribed from the openapi
 # `x-northwind-gateway.rate_limits`. `ip_*` is the (src_ip, route_class) bucket
 # required by the build order; `id_*` is the per-identity bucket the contract
@@ -169,46 +188,86 @@ glob:pub LOGIN_FAIL_WINDOW_S: int = 900;
 # The public route table, transcribed from the openapi `paths:` block and
 # `x-northwind-mapping`. Columns:
 #   0 method  1 path template  2 walker  3 route_class  4 mutating  5 step_up
-#   6 audit_action
+#   6 audit_action  7 success
+# Column 7 is the contract's `success:` field, transcribed row for row from the
+# same x-northwind-mapping block. It is the status the gateway answers with when
+# the walker reports success without naming a status of its own — the app never
+# gets to pick the success code, the contract does.
 # Path templates are relative to PATH_PREFIX. Anything not on this table 404s at
 # the gateway and never reaches the upstream — the upstream's walker surface is
 # never exposed by path pass-through.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Adapter: contract walker name -> the archetype name the app actually serves.
+#
+# ROUTES column 2 stays a faithful transcription of the contract's
+# `x-northwind-mapping: walker:` field. The app deviates from it for six
+# archetypes, so this map — and nothing else — reconciles the two sides:
+#
+#     contract (x-northwind-mapping)   app (app/walkers/*.jac, `walker:pub|priv`)
+#     RegisterUser                     Register
+#     LoginUser                        Login
+#     LogoutSession                    Logout
+#     ReauthSession                    Reauth
+#     GetSession                       SessionInfo
+#     ChangeMemberRole                 ChangeRole
+#
+# Only the URL the gateway POSTs to uses the served name. Everywhere a route is
+# compared against the contract — audit actions, the login special-casing in
+# app.jac — the CONTRACT name is what is used, so the deviation cannot spread.
+# Renaming the app's archetypes instead would be the cleaner fix, but that is
+# app-side and out of the gateway's scope.
+#
+# A name absent from this map is proxied unchanged. That covers both the rows
+# where the two sides already agree and the rows the app has not implemented at
+# all — those reach jac-scale, which answers 405, and the gateway turns that
+# into a clean 502 rather than relaying it. See unwrap_upstream() in app.jac.
+# ---------------------------------------------------------------------------
+
+glob:pub WALKER_ARCHETYPE: dict = {
+    "RegisterUser": "Register",
+    "LoginUser": "Login",
+    "LogoutSession": "Logout",
+    "ReauthSession": "Reauth",
+    "GetSession": "SessionInfo",
+    "ChangeMemberRole": "ChangeRole"
+};
+
 glob:pub ROUTES: list = [
-    ["POST",   "/auth/register",                                                        "RegisterUser",     "auth_register",   True,  False, "auth.register"],
-    ["POST",   "/auth/login",                                                           "LoginUser",        "auth_login",      True,  False, "auth.login"],
-    ["POST",   "/auth/logout",                                                          "LogoutSession",    "auth",            True,  False, "auth.logout"],
-    ["POST",   "/auth/refresh",                                                         "RefreshSession",   "auth",            True,  False, "auth.token_issued"],
-    ["POST",   "/auth/reauth",                                                          "ReauthSession",    "auth",            True,  False, "auth.reauth_required"],
-    ["GET",    "/auth/session",                                                         "GetSession",       "read",            False, False, ""],
-    ["GET",    "/tenants",                                                              "ListMyTenants",    "read",            False, False, "tenant.read"],
-    ["POST",   "/tenants",                                                              "CreateTenant",     "write",           True,  False, "tenant.create"],
-    ["GET",    "/tenants/{tenant_id}",                                                  "ReadTenant",       "read",            False, False, "tenant.read"],
-    ["GET",    "/tenants/{tenant_id}/members",                                          "ListMembers",      "read",            False, False, "tenant.read"],
-    ["POST",   "/tenants/{tenant_id}/members/invites",                                  "InviteMember",     "write",           True,  False, "member.invite"],
-    ["POST",   "/tenants/{tenant_id}/invites/accept",                                   "AcceptInvite",     "write",           True,  False, "member.accept"],
-    ["PATCH",  "/tenants/{tenant_id}/members/{membership_id}",                          "ChangeMemberRole", "write",           True,  True,  "member.role_change"],
-    ["DELETE", "/tenants/{tenant_id}/members/{membership_id}",                          "RemoveMember",     "write",           True,  True,  "member.remove"],
-    ["GET",    "/tenants/{tenant_id}/projects",                                         "ListProjects",     "read",            False, False, "project.list"],
-    ["POST",   "/tenants/{tenant_id}/projects",                                         "CreateProject",    "write",           True,  False, "project.create"],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}",                            "ReadProject",      "read",            False, False, "project.read"],
-    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}",                            "UpdateProject",    "write",           True,  False, "project.update"],
-    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}",                            "DeleteProject",    "write",           True,  False, "project.delete"],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks",                      "ListTasks",        "read",            False, False, "task.list"],
-    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks",                      "CreateTask",       "write",           True,  False, "task.create"],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "ReadTask",         "read",            False, False, "task.read"],
-    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "UpdateTask",       "write",           True,  False, "task.update"],
-    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "DeleteTask",       "write",           True,  False, "task.delete"],
-    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/assign",     "AssignTask",       "write",           True,  False, "task.assign"],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments",   "ListComments",     "read",            False, False, "comment.list"],
-    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments",   "CreateComment",    "write",           True,  False, "comment.create"],
-    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", "ReadComment",   "read",  False, False, "comment.read"],
-    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", "DeleteComment", "write", True,  False, "comment.delete"],
-    ["GET",    "/tenants/{tenant_id}/search",                                           "SearchTenant",     "search",          False, False, "search.query"],
-    ["POST",   "/tenants/{tenant_id}/exports",                                          "RequestExport",    "export_request",  True,  True,  "export.request"],
-    ["GET",    "/tenants/{tenant_id}/exports/{export_id}",                              "DownloadExport",   "export_download", False, True,  "export.download"],
-    ["POST",   "/tenants/{tenant_id}/integrations/call",                                "IntegrationCall",  "integration",     True,  True,  "integration.call"]
+    ["POST",   "/auth/register",                                                     "RegisterUser",     "auth_register",   True,  False, "auth.register",         201],
+    ["POST",   "/auth/login",                                                           "LoginUser",        "auth_login",      True,  False, "auth.login",            200],
+    ["POST",   "/auth/logout",                                                          "LogoutSession",    "auth",            True,  False, "auth.logout",           200],
+    ["POST",   "/auth/refresh",                                                         "RefreshSession",   "auth",            True,  False, "auth.token_issued",     200],
+    ["POST",   "/auth/reauth",                                                          "ReauthSession",    "auth",            True,  False, "auth.reauth_required",  200],
+    ["GET",    "/auth/session",                                                         "GetSession",       "read",            False, False, "",                      200],
+    ["GET",    "/tenants",                                                              "ListMyTenants",    "read",            False, False, "tenant.read",           200],
+    ["POST",   "/tenants",                                                              "CreateTenant",     "write",           True,  False, "tenant.create",         201],
+    ["GET",    "/tenants/{tenant_id}",                                                  "ReadTenant",       "read",            False, False, "tenant.read",           200],
+    ["GET",    "/tenants/{tenant_id}/members",                                          "ListMembers",      "read",            False, False, "tenant.read",           200],
+    ["POST",   "/tenants/{tenant_id}/members/invites",                                  "InviteMember",     "write",           True,  False, "member.invite",         201],
+    ["POST",   "/tenants/{tenant_id}/invites/accept",                                   "AcceptInvite",     "write",           True,  False, "member.accept",         200],
+    ["PATCH",  "/tenants/{tenant_id}/members/{membership_id}",                          "ChangeMemberRole", "write",           True,  True,  "member.role_change",    200],
+    ["DELETE", "/tenants/{tenant_id}/members/{membership_id}",                          "RemoveMember",     "write",           True,  True,  "member.remove",         200],
+    ["GET",    "/tenants/{tenant_id}/projects",                                         "ListProjects",     "read",            False, False, "project.list",          200],
+    ["POST",   "/tenants/{tenant_id}/projects",                                         "CreateProject",    "write",           True,  False, "project.create",        201],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}",                            "ReadProject",      "read",            False, False, "project.read",          200],
+    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}",                            "UpdateProject",    "write",           True,  False, "project.update",        200],
+    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}",                            "DeleteProject",    "write",           True,  False, "project.delete",        200],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks",                      "ListTasks",        "read",            False, False, "task.list",             200],
+    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks",                      "CreateTask",       "write",           True,  False, "task.create",           201],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "ReadTask",         "read",            False, False, "task.read",             200],
+    ["PATCH",  "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "UpdateTask",       "write",           True,  False, "task.update",           200],
+    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}",            "DeleteTask",       "write",           True,  False, "task.delete",           200],
+    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/assign",     "AssignTask",       "write",           True,  False, "task.assign",           200],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments",   "ListComments",     "read",            False, False, "comment.list",          200],
+    ["POST",   "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments",   "CreateComment",    "write",           True,  False, "comment.create",        201],
+    ["GET",    "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", "ReadComment",   "read",  False, False, "comment.read",            200],
+    ["DELETE", "/tenants/{tenant_id}/projects/{project_id}/tasks/{task_id}/comments/{comment_id}", "DeleteComment", "write", True,  False, "comment.delete",          200],
+    ["GET",    "/tenants/{tenant_id}/search",                                           "SearchTenant",     "search",          False, False, "search.query",          200],
+    ["POST",   "/tenants/{tenant_id}/exports",                                          "RequestExport",    "export_request",  True,  True,  "export.request",        202],
+    ["GET",    "/tenants/{tenant_id}/exports/{export_id}",                              "DownloadExport",   "export_download", False, True,  "export.download",       200],
+    ["POST",   "/tenants/{tenant_id}/integrations/call",                                "IntegrationCall",  "integration",     True,  True,  "integration.call",      200]
 ];
 
 # The action emitted when a login attempt fails
@@ -287,6 +346,17 @@ obj Settings {
     has csp: str = "";
     has upstream_bearer: str = "";
     has upstream_timeout_s: float = 10.0;
+    # Peers whose X-Forwarded-For the gateway will believe, from $TRUSTED_PROXIES.
+    # DEFAULTS TO EMPTY, and empty means the observed peer address is the only
+    # source of truth — an unset variable cannot silently make the gateway
+    # trust a client-supplied header. Loopback is NOT trusted by default.
+    #
+    # Listing a peer here is a full delegation of source identity to it: XFF is
+    # client-writable, so any host on this list can attribute a request to any
+    # address it likes, and every audit event, rate-limit bucket and containment
+    # control keyed on src_ip inherits that. Only list a reverse proxy that
+    # strips and rewrites the header itself.
+    has trusted_proxies: list = [];
 
     """Origin allowlist membership. Never wildcards."""
     def origin_allowed(origin: str) -> bool {
@@ -341,6 +411,21 @@ def load_settings -> Settings {
         up = f"http://{up}";
     }
 
+    # Comma-separated peer addresses whose X-Forwarded-For may be believed.
+    # Unset -> empty list -> XFF ignored entirely and src_ip is the observed
+    # peer. That is the fail-closed default and it is deliberate: a deployment
+    # that forgets this variable under-attributes sources, which is recoverable;
+    # one that trusted XFF by default would let any client forge its own source
+    # address on every audit event and rate-limit bucket.
+    raw_proxies = env_str("TRUSTED_PROXIES", "");
+    trusted: list = [];
+    for p in raw_proxies.split(",") {
+        t = p.strip();
+        if t {
+            trusted.append(t);
+        }
+    }
+
     return Settings(
         ctx_signing_key=ctx_key,
         session_secret=sess,
@@ -351,6 +436,7 @@ def load_settings -> Settings {
         bind_host=host,
         bind_port=port,
         upstream=up.rstrip("/"),
+        trusted_proxies=trusted,
         # Same sink, same env var as the application's emitter
         # (app/security/audit.jac:313) so gateway and guard() events land in one
         # file and the per-session seq chain has no holes. AUDIT_PATH is kept as
@@ -397,7 +483,8 @@ def match_template(template: str, path: str) -> Any {
 """Resolve (method, path) to a route table row.
 
 `path` is the full request path including PATH_PREFIX. Returns a dict with keys
-walker/route_class/mutating/step_up/params/template, or None when unrouted.
+walker/archetype/route_class/mutating/step_up/success/params/template, or None when
+unrouted. `walker` is the contract's name; `archetype` is what the app serves.
 `allowed_methods` on a path mismatch is returned separately by allowed_for_path."""
 def resolve_route(method: str, path: str) -> Any {
     if not path.startswith(PATH_PREFIX) {
@@ -423,6 +510,11 @@ def resolve_route(method: str, path: str) -> Any {
             "mutating": row[4],
             "step_up": row[5],
             "audit_action": row[6],
+            "success": row[7],
+            # `walker` is the contract's name and stays authoritative for every
+            # comparison; `archetype` is the name to POST to. They differ only
+            # for the six rows in WALKER_ARCHETYPE.
+            "archetype": WALKER_ARCHETYPE.get(row[2], row[2]),
             "params": params
         };
     }
