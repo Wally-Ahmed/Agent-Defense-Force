@@ -18,11 +18,16 @@ start without it — no default, no dev bypass) and `OPENROUTER_API_KEY`.
 **Clear the Jac cache after editing any `.jac` file:**
 
 ```bash
-find . -type d -name .jac -not -path './vendor/*' | xargs rm -rf
+find . -type d -path '*/.jac/cache' -not -path './vendor/*' | xargs rm -rf
 ```
 
 Jac silently serves stale compiled modules otherwise. A 13-test file once
 reported "Ran 8 tests" with no error.
+
+⚠️ **Do not widen this to `-name .jac`.** That matches the `.jac` directories
+themselves, and `rm -rf` on them destroys `.jac/data/anchor_store.db` — the
+running app's graph database — along with `app/.jac/data/main.db`. Only
+`.jac/cache/*.jir` is the stale-bytecode problem; the sibling `data/` is state.
 
 ---
 

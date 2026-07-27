@@ -32,7 +32,7 @@ base module, so edits to a `.test.jac` annex can be **silently ignored** — a 1
 reporting "Ran 8 tests" with no error. Clear before trusting any result:
 
 ```bash
-find . -type d -name .jac -not -path './vendor/*' | xargs rm -rf
+find . -type d -path '*/.jac/cache' -not -path './vendor/*' | xargs rm -rf
 ```
 
 **2. Cold-cache first run.** Immediately after clearing, the first `gateway/tests/verify.sh`
