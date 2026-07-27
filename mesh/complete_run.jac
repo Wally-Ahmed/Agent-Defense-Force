@@ -256,7 +256,9 @@ with entry:__main__ {
         } except Exception as e {
             decision_err = str(e);
         }
-        write_json(os.path.join(RUN_DIR, "decision.json"), fsm.decision);
+        if incident_id == fixture_id {
+            write_json(os.path.join(RUN_DIR, "decision.json"), fsm.decision);
+        }
     }
     print("");
     print("  decision.v1 schema-valid: " + str(decision_ok)
@@ -286,6 +288,19 @@ with entry:__main__ {
     print("  live control kinds after rollback: " + str(executor.live_control_kinds()));
     print("  control surface rows after rollback: " + str(len(surface_after)));
 
+    # THE ROLLBACK ORACLE. Not "we called rollback" and not "the count fell" —
+    # the control surface has to be byte-identical to the world before the first
+    # action was applied. Anything else means the application is still contained.
+    restored: bool = executor.surface_restored();
+    diff: dict = executor.surface_diff();
+    print("");
+    print("  baseline rows              : " + str(len(executor.baseline)));
+    print("  surface restored to baseline: " + str(restored));
+    if not restored {
+        print("  STILL ENFORCING (leftover) : " + json.dumps(diff["leftover"]));
+        print("  MISSING (lost)             : " + json.dumps(diff["lost"]));
+    }
+
     print("");
     print("  executor trace:");
     for t in executor.trace {
@@ -298,15 +313,46 @@ with entry:__main__ {
     # ------------------------------------------------------------------
     # Artifacts
     # ------------------------------------------------------------------
+    # Findings observed in THIS run, recorded in the artifact rather than
+    # smoothed out of it. Neither was worked around: no probe was loosened, no
+    # threshold moved, no action re-approved.
+    findings: list = [];
+    for t in executor.trace {
+        if t.get("phase", "") == "apply" and t.get("health_status", "") == "fail" {
+            findings.append({
+                "finding": "health_probe_exact_reason_is_order_dependent",
+                "kind": t.get("kind", ""),
+                "action_id": t.get("action_id", ""),
+                "failed_probes": t.get("health_failed", []),
+                "probe_report": t.get("health_report", []),
+                "note": "containment/probes.jac::probe_contained_subject_is_blocked "
+                        + "asserts the EXACT deny reason for this kind. The subject was "
+                        + "denied -- but by an EARLIER action in the same action_set, "
+                        + "which short-circuits the guard before this kind's own reason "
+                        + "can be observed. The action self-aborted and the executor "
+                        + "auto-rolled it back, even though the subject is contained. "
+                        + "Security outcome is safe; the verification is order-dependent."
+            });
+        }
+    }
+
     contained_kinds: list = sorted([str(a["action"]) for a in fsm.applied_actions]);
     containment: dict = {
+        "findings": findings,
         "schema": "containment_result.v0 (driver artifact -- no frozen schema exists)",
         "incident_id": incident_id,
         "run_id": RUN_ID,
         "executor": "containment/executor.jac (real; no mock in this path)",
         "adapter": "mesh/live_containment.jac",
         "world": world,
-        "action_set": fsm.decision.get("action_set", []),
+        # `action_set` on the CONTAINMENT artifact means "what actually took
+        # effect", not "what was decided". mesh/report reads this key to render
+        # its "Actions applied" table, and listing the decided set there would
+        # claim eight enforcing controls when five were enforcing. The full
+        # decided set is one section up in the report, from decision.json, and
+        # is kept here too under its own name so the artifact stands alone.
+        "action_set": fsm.applied_actions,
+        "decided_action_set": fsm.decision.get("action_set", []),
         "applied": fsm.applied_actions,
         "applied_kinds": contained_kinds,
         "aborted": fsm.aborted_actions,
@@ -316,15 +362,36 @@ with entry:__main__ {
         "health": ("pass" if fsm.state in ["CONTAINED", "ROLLED_BACK"] and len(fsm.applied_actions) > 0
                    else "n/a"),
         "min_ttl_s": fsm.min_ttl_s,
+        "control_surface_before": executor.baseline,
         "control_surface_while_contained": surface_contained,
         "control_surface_after_rollback": surface_after,
         "rolled_back": [str(a["action"]) for a in executor.rolled_back],
-        "rollback_complete": len(surface_after) == 0,
+        # Measured against the pre-containment baseline, not against zero: the
+        # claim is "the world is as it was", which is what has to be checked.
+        "rollback_complete": restored,
+        "rollback_diff": diff,
+        "rollback_order": "LIFO — prior_state snapshots nest, so they unwind from the top",
         "final_state": fsm.state,
         "state_trace": fsm.log.state_trace(),
         "trace": executor.trace,
         "controls_path": controls_path()
     };
+    if incident_id != fixture_id {
+        # A negative control must never overwrite the acceptance artifacts.
+        write_json(os.path.join(RUN_DIR, "incident_mismatch_probe.json"), {
+            "escalated_incident_id": incident_id,
+            "assessments_answer_incident_id": fixture_id,
+            "decision": fsm.decision,
+            "final_state": fsm.state,
+            "state_trace": fsm.log.state_trace(),
+            "rejections": {rid: fsm.mesh[rid].rejected for rid in RESPONDER_IDS}
+        });
+        print("");
+        print("  NEGATIVE CONTROL -- wrote incident_mismatch_probe.json only; "
+              + "decision.json and containment.json were NOT touched.");
+        sys.exit(0);
+    }
+
     write_json(os.path.join(RUN_DIR, "containment.json"), containment);
 
     write_json(os.path.join(RUN_DIR, "coordinator_events.json"), {
@@ -342,5 +409,15 @@ with entry:__main__ {
           + "  contain=" + str(fsm.decision.get("contain", False))
           + "  applied=" + str(len(fsm.applied_actions))
           + "  final_state=" + str(fsm.state)
-          + "  controls_left=" + str(len(surface_after)));
+          + "  controls_left=" + str(len(surface_after))
+          + "  rollback_complete=" + str(restored));
+
+    if not restored {
+        # Loud, non-zero, and last. A run that leaves the application contained
+        # is a failed run however good the decision was.
+        print("");
+        print("FATAL: rollback did NOT restore the control surface.");
+        print("       still enforcing: " + json.dumps(diff["leftover"]));
+        sys.exit(3);
+    }
 }

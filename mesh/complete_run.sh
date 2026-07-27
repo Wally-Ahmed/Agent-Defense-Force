@@ -33,9 +33,20 @@ if [ -z "${APP_CTX_SIGNING_KEY:-}" ]; then
   echo "  (generated a throwaway APP_CTX_SIGNING_KEY for this run -- not logged, not stored)"
 fi
 
-# Stale .jir caches silently ignore edits (docs/running-tests.md).
-find "$REPO" -type d -name .jac -not -path "$REPO/vendor/*" -print0 2>/dev/null \
-  | xargs -0 rm -rf 2>/dev/null || true
+# Stale .jir caches silently ignore edits (docs/running-tests.md). Scoped to the
+# mesh tree ON PURPOSE: a repo-wide wipe races any concurrently running `jac
+# test` in another component, and each side then hits ENOENT in _find_spec on a
+# cache directory the other just removed. Observed as a 1-in-3 spurious import
+# failure while another agent was running the coordinator suite. Clear the whole
+# repo by hand between components, not from inside a runner.
+find "$REPO/mesh" -type d -name .jac -print0 2>/dev/null | xargs -0 rm -rf 2>/dev/null || true
 
 cd "$WORK"
+# One retry, for the same reason: a cache directory can vanish under a
+# concurrent build mid-import. A second consecutive failure is a real failure.
+if jac run "$REPO/mesh/complete_run.jac" "$@"; then
+  exit 0
+fi
+echo "  (first attempt failed -- retrying once; see the note above)" >&2
+rm -rf "$WORK/.jac"
 exec jac run "$REPO/mesh/complete_run.jac" "$@"

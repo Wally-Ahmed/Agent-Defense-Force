@@ -196,10 +196,16 @@ def derive_action_id(incident_id: str, kind: str, target: dict) -> str {
 and it is what health_probe reads instead of inventing a second verdict."""
 obj LiveContainment {
     has incident_id: str = "";
-    has applied: list = [];          # required by fsm.summary()
+    has applied: list = [];          # required by fsm.summary(); APPLICATION ORDER
     has rolled_back: list = [];
     has reports: dict = {};          # action_id -> execute() rep
     has trace: list = [];            # ordered log of every executor interaction
+
+    # The control surface as it stood before the FIRST apply. This is the only
+    # thing "rolled back" can honestly be measured against — see _unwind().
+    has baseline: list = [];
+    has _baseline_taken: bool = False;
+    has _unwound: bool = False;
 
     def key_for(action: dict) -> str {
         return derive_action_id(
@@ -224,6 +230,15 @@ obj LiveContainment {
         kind: str = str(action.get("action", ""));
         target: dict = action.get("target", {});
         aid: str = self.key_for(action);
+
+        # Capture the world as it was before ANY of this decision was applied.
+        # Taken here rather than in the driver so the invariant belongs to the
+        # object that has to honour it, and holds however it is driven.
+        if not self._baseline_taken {
+            self.baseline = control_surface();
+            self._baseline_taken = True;
+        }
+
         request: dict = {
             "action_id": aid,
             "incident_id": self.incident_id,
@@ -306,8 +321,12 @@ obj LiveContainment {
 
     Resolves the ContainmentAction graph act_node by action_id and hands it to
     containment.executor.rollback, which replays the recorded prior_state. An
-    action already in a terminal state is not resurrected to be re-reversed."""
-    def rollback(action: dict, now_ms_arg: int) -> dict {
+    action already in a terminal state is not resurrected to be re-reversed.
+
+    PRIVATE, and it must stay that way: reversing a single action out of an
+    overlapping set is not a well-defined operation. Callers go through
+    rollback(), which unwinds the whole stack in order. See _unwind()."""
+    def _reverse_one(action: dict, cause: str) -> dict {
         aid: str = self.key_for(action);
         act_node = find_action(aid);
         if act_node is None {
@@ -326,7 +345,7 @@ obj LiveContainment {
                     "target": action.get("target", {}),
                     "status": str(act_node.state)};
         }
-        result: dict = rollback(act_node, "coordinator ttl expiry");
+        result: dict = rollback(act_node, cause);
         self.rolled_back.append(action);
         self.trace.append({
             "phase": "rollback",
@@ -339,6 +358,77 @@ obj LiveContainment {
         return {"action": str(action.get("action", "")),
                 "target": action.get("target", {}),
                 "status": str(result.get("state", ""))};
+    }
+
+    """Unwind the ENTIRE applied stack, most recent action first.
+
+    WHY LIFO, AND WHY ALL AT ONCE. containment/executor.jac reverses an action by
+    replaying the `prior_state` it snapshotted at apply time. Those snapshots
+    nest: when two actions in one action_set touch the same scope key — which
+    happens whenever the coordinator's quorum groups the same containment kind
+    into two proposal groups whose targets differ only by an optional field —
+    the second action's "before" IS the first action's control. Unwinding them
+    in application order therefore deletes the control and then faithfully
+    RECREATES it, and the containment survives its own rollback.
+
+    Reversed order is not a heuristic, it is the only order the snapshots admit:
+    a stack of prior states unwinds from the top. The FSM hands us its applied
+    list one entry at a time and in application order, so the first request
+    drains the whole stack and every later request finds its action already
+    terminal — which `_reverse_one` reports honestly rather than re-reversing.
+
+    Draining EVERYTHING (rather than only the requested action) is also the right
+    behaviour on the health-failure path: a containment set in which one action
+    broke the application is not something to leave half-applied."""
+    def _unwind(cause: str) -> list {
+        self._unwound = True;
+        stack: list = list(self.applied);
+        results: list = [];
+        i: int = len(stack) - 1;
+        while i >= 0 {
+            results.append(self._reverse_one(stack[i], cause));
+            i = i - 1;
+        }
+        return results;
+    }
+
+    """Reverse this action. The FIRST call unwinds the whole stack, in LIFO
+    order; later calls report the (already terminal) state of the one asked for.
+
+    This is the coordinator's `executor.rollback(action, now_ms)` contract, and
+    the return value is exactly what fsm._contain / fsm.tick_expire expect."""
+    def rollback(action: dict, now_ms_arg: int) -> dict {
+        if not self._unwound {
+            self._unwind("coordinator ttl expiry");
+        }
+        return self._reverse_one(action, "coordinator ttl expiry");
+    }
+
+    """True iff the live control surface is byte-identical to the baseline.
+
+    The ONLY acceptable definition of "rolled back". Not "we called rollback",
+    not "the count went down" — the world is indistinguishable from before."""
+    def surface_restored -> bool {
+        now_surface: list = control_surface();
+        return (json.dumps(now_surface, sort_keys=True)
+                == json.dumps(self.baseline, sort_keys=True));
+    }
+
+    """What is still standing that should not be, and what is missing that
+    should be. Empty on both sides means a complete reversal."""
+    def surface_diff -> dict {
+        def _keys(rows: list) -> list {
+            return sorted([str(r.get("kind", "")) + " " + str(r.get("scope_key", ""))
+                           for r in rows]);
+        }
+        before: list = _keys(self.baseline);
+        after: list = _keys(control_surface());
+        return {
+            "leftover": sorted([k for k in after if k not in before]),
+            "lost": sorted([k for k in before if k not in after]),
+            "baseline_rows": len(self.baseline),
+            "current_rows": len(control_surface())
+        };
     }
 
     """Sorted kinds actually enforcing, read out of the real control surface."""
