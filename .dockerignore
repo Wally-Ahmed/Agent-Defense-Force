@@ -1,0 +1,43 @@
+# Deny everything by default, then re-admit ONLY the static walkthrough.
+# This is the primary guard against shipping secrets or application code.
+*
+
+!walkthrough
+!nginx-walkthrough.conf
+
+# Re-exclude heavy / non-public material inside walkthrough/
+walkthrough/graphify-out
+walkthrough/stt
+walkthrough/frames
+walkthrough/CLAUDE.local.md
+walkthrough/.env
+walkthrough/**/.env
+
+# Explicit belt-and-braces denials (already covered by `*`, kept for auditability)
+.env
+.env.*
+.cotal
+.git
+.jac
+.mempalace
+.claude
+runs
+var
+vendor
+app
+gateway
+mesh
+coordinator
+monitor
+incident
+containment
+attack
+contracts
+tests
+skills
+spikes
+docs
+graphify-out
+entities.json
+mempalace.yaml
+jac.toml
