@@ -15,6 +15,7 @@
 // want of a key that was on disk the whole time. It returns variable NAMES, never values.
 
 import process from "node:process";
+import { readFileSync } from "node:fs";
 import { AGENT_IDS } from "../../lib/agents.js";
 import { loadRepoEnv } from "../../lib/env.js";
 import { effortLedger } from "../../lib/paths.js";
@@ -93,17 +94,55 @@ async function cmdWrite(flags) {
   return 0;
 }
 
+// Agent ids already present on a run's ledger. A missing or unreadable ledger is
+// simply "nothing recorded yet" -- the first write-all of a run is the normal case.
+function ledgerAgents(runId) {
+  const seen = new Set();
+  let raw;
+  try {
+    raw = readFileSync(effortLedger(runId), "utf8");
+  } catch {
+    return seen;
+  }
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const agent = JSON.parse(line).agent;
+      if (typeof agent === "string") seen.add(agent);
+    } catch {
+      // A malformed line is not a receipt. checkGate() reports it; skipping here
+      // must not mask it by pretending the agent was covered.
+    }
+  }
+  return seen;
+}
+
 async function cmdWriteAll(flags) {
   const runId = flags["run-id"];
   if (typeof runId !== "string") die("write-all requires --run-id <id>");
 
-  // Six independent runtimes, no shared state -- probe them all at once rather than
+  // An agent that already has a receipt on this run's ledger is left alone. That
+  // receipt was written by the component that actually ran -- monitor/replay.py
+  // writes the monitor's during ESCALATE, from the real hermes call. Probing again
+  // here and appending would produce a SECOND, differing monitor receipt and the
+  // gate would refuse the whole run with RECEIPT_DUPLICATE.
+  //
+  // Skipping is the honest direction: it preserves the record of what was actually
+  // exercised instead of overwriting it with a synthetic re-probe. It never converts
+  // a mocked receipt into a live one -- whatever the real run produced is what stands.
+  const already = ledgerAgents(runId);
+  const todo = AGENT_IDS.filter((id) => !already.has(id));
+  for (const id of AGENT_IDS) {
+    if (already.has(id)) process.stdout.write(`skip ${id}: receipt already on the ledger\n`);
+  }
+
+  // Independent runtimes, no shared state -- probe them all at once rather than
   // paying every network round trip in series.
-  process.stdout.write(`probing ${AGENT_IDS.length} runtimes concurrently...\n\n`);
-  const probes = await probeAgents(AGENT_IDS);
+  process.stdout.write(`probing ${todo.length} runtimes concurrently...\n\n`);
+  const probes = await probeAgents(todo);
 
   const forcedMock = flags.mocked === true || flags.mocked === "true";
-  for (const agentId of AGENT_IDS) {
+  for (const agentId of todo) {
     const receipt = buildReceipt({ agentId, probe: probes[agentId], mocked: forcedMock });
     const wrote = writeReceipt(runId, receipt);
     printReceipt(receipt, wrote);
