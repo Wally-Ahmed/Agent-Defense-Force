@@ -47,3 +47,7 @@ runs/
 
 # Incident replay artifacts — regenerated
 incident/out/
+
+# Cotal runtime state: NATS pidfile/log, JetStream store, minted CREDENTIALS,
+# generated personas. Never committed - .cotal/auth/creds/ holds real secrets.
+.cotal/

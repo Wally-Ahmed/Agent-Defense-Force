@@ -91,6 +91,11 @@ mattered: a model id that failed to resolve would otherwise have surfaced mid-ac
 Hermes is now configured at `~/.hermes/config.yaml` for provider `openrouter`, model
 `z-ai/glm-5.2`, effort `xhigh`, with the key in `~/.hermes/.env` (mode 600, never echoed).
 
+> **Read the correction at the bottom of this file too.** The key was cleared here at
+> 16:45, but the *mesh runtime* went on reporting `monitor`, `responder_kimi` and
+> `responder_glm` blocked on "OPENROUTER_API_KEY is empty" for another hour. The key was
+> never empty — nothing in `mesh/` had ever loaded `.env`. That is now `mesh/lib/env.js`.
+
 Original entry below.
 
 **Blocks (was):** live inference for hermes/GLM-5.2 (monitor), opencode/Kimi-K3, opencode/GLM-5.2,
@@ -138,6 +143,12 @@ requires no structural change.
 **Cleared without the interactive login.** `opencode` reads `OPENROUTER_API_KEY` straight from
 the environment; `opencode auth login` was never required. Verified live:
 `opencode run --model openrouter/z-ai/glm-5.2` printed `> build · z-ai/glm-5.2` then `PONG`.
+
+> **Read the correction at the bottom of this file too.** The harness was cleared here at
+> 16:50, but the *mesh runtime* went on reporting both opencode responders blocked for
+> another hour because `mesh/effort_receipts/src/probe.js` and `mesh/up.sh` treated
+> `opencode auth list` reporting 0 **stored** credentials as an authentication signal. It
+> is not one, and they no longer do.
 
 Original entry below.
 
@@ -226,3 +237,61 @@ All five OpenRouter-pinned model ids resolve live. Two blockers (B4, B5) turned 
 **no user action at all** — the tools read the environment key directly.
 
 Nothing is blocked. The live six-model run is now gated only on the mesh runtime.
+
+---
+
+## Correction — the "empty key / no credentials" finding was a MISREAD · 17:55 PDT
+
+The harnesses were cleared at 16:50, but the **mesh runtime kept reporting three of them
+blocked** — `monitor` (hermes), `responder_kimi` and `responder_glm` (opencode) — and that
+false verdict was written into `mesh/effort_receipts/src/probe.js`, `mesh/up.sh`,
+`mesh/bridge/mesh_config.jac`, `mesh/agent_runner/src/mock.js` and the run reports as
+though it were fact. It was not. Two separate misreadings, both now disproved
+**empirically**, not by re-reading the config:
+
+**1. "`OPENROUTER_API_KEY` is empty."** It never was. `.env` line 13 holds a valid
+73-character key. What was actually missing is that **nothing in `mesh/` had ever loaded
+`.env`** — `run.js`'s `preflight()` read `process.env.OPENROUTER_API_KEY`, found it
+undefined because no loader existed, and reported the agent blocked. `mesh/up.sh` did
+source `.env`, but only *halfway down its own preflight*, so everything it spawned before
+that point ran without it.
+
+Disproof: `curl -H "Authorization: Bearer $OPENROUTER_API_KEY"
+https://openrouter.ai/api/v1/auth/key` → **HTTP 200**, `is_free_tier: false`. Both pinned
+model ids resolve: `.../models/moonshotai/kimi-k3/endpoints` → **200**,
+`.../models/z-ai/glm-5.2/endpoints` → **200**.
+
+Fix: `mesh/lib/env.js` — one loader, called from the runner bin, the effort-receipt bin and
+the top of `up.sh`. It puts the value in `process.env`, which is also what keeps the
+transcript tap's redaction covering it (`secretsFromEnv()` matches `/API_?KEY/i`).
+
+**2. "`opencode` has 0 credentials, so it cannot run live."** `opencode auth list` counts
+credentials opencode has **stored**. opencode reads its provider key from the **inherited
+environment** and needs nothing stored at all, so that count was never an auth signal.
+
+Disproof: with the key exported and `opencode auth list` still reporting 0 stored
+credentials, `opencode run -m openrouter/z-ai/glm-5.2 --variant max "…"` exits 0 and its
+own log line reports `llm.provider=openrouter llm.model=z-ai/glm-5.2`. Same for
+`moonshotai/kimi-k3`. That count is now printed as information and is **never** used as an
+auth signal again — `up.sh` says so in the code.
+
+**3. hermes.** `hermes -z "…" -m z-ai/glm-5.2 --provider openrouter --ignore-rules` exits 0
+and returns text. `hermes status` reports `Model: z-ai/glm-5.2`, `Provider: OpenRouter`.
+Effort has **no CLI flag** in v0.16.0; its only channel is `agent.reasoning_effort` in
+`~/.hermes/config.yaml`, read back as `xhigh`. hermes' ladder is exactly
+(minimal, low, medium, high, xhigh) — **there is no `max`** — so `xhigh` is this runtime's
+ceiling and is precisely what `mesh/config/models.json` pins. Not a downgrade.
+
+**Not swept under the rug — one open question on `responder_glm`.** opencode's model
+catalog (models.dev) declares `z-ai/glm-5.2`'s effort ladder as `[high, xhigh]` with **no
+`max`**, while `moonshotai/kimi-k3`'s is `[low, high, max]`. The pin for both is `max`.
+Against that, the live route accepts it: OpenRouter returns HTTP 200 for
+`reasoning.effort:"max"` on both models and bills reasoning tokens, and glm-5.2 produces
+reasoning tokens through opencode at `--variant max` (228 on a probe prompt, vs 348 at
+`xhigh` and 456 at `high` — one sample each, across different upstream providers, so the
+ordering is noise). opencode itself neither echoes nor validates a variant (`--variant
+bogus-xyz` also exits 0). The receipt records `max` with the full evidence chain and the
+catalog discrepancy named in `source`. **If the catalog is later shown to be right, the
+correct fix is an explicit `effort_ceiling: "xhigh"` for `responder_glm` in
+`mesh/config/models.json`** — the mechanism `responder_antigravity` already uses — not a
+quieter `source` string.
