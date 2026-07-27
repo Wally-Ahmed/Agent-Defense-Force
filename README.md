@@ -96,15 +96,19 @@ From a real end-to-end live run (`runs/six-live-e2e/`):
 - Containment **applied → verified → rolled back, 0 controls remaining**
 - **$0.049** metered
 
-All five models independently reported identical campaign stages `[1,2,3,4,5,6,7,10]`, and
-**all five detected and refused a planted prompt injection** — one classified it
-`AML.T0051.001`.
+The five models converged without seeing each other's answers: all five returned
+**malicious**, all five reported campaign stages `[2,3,4]`, and two of them
+(claude, kimi) independently picked up an additional stage 6. **Four of the five**
+explicitly flagged the planted prompt injection in their rationales.
 
-Confidences fell from 0.93–0.99 on a rich fixture to **0.85–0.95** on the sparser real
-incident, and applied actions from 8 to 5. Less evidence, less certainty, fewer actions
-clearing the two-proposer bar. That is **reasoning, not pattern-matching**.
+Confidences landed at **0.85–0.95** (claude 0.85, glm 0.90, kimi 0.90, codex 0.94,
+antigravity 0.95) — lower than the 0.93–0.99 the same models returned on a much richer
+fixture, and five actions cleared the two-proposer bar rather than eight. Sparser
+evidence, less certainty, fewer actions. That is **reasoning, not pattern-matching**.
 
-**~450 tests across 12 suites**, every one run from cleared caches.
+Test suites run from cleared caches: app+domain **129**, coordinator **64**, incident
+**46**, mesh bridge **41**, gateway **40**, attack driver **35/35**, fixture verifier
+**56**, monitor **6**.
 
 ## What we did not do
 
